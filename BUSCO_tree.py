@@ -3,87 +3,303 @@
 Created on Sun Feb 16 10:15:58 2025
 
 @author: ian.bollinger@entheome.org/ian.michael.bollinger@gmail.com
+
+EGEP (Entheome Genome Extraction Pipeline) is a versatile bioinformatics pipeline
+for annotating gene regions and extracting them for graphical and phylogenetic analysis.
 """
-# REQUIRED PYTHON LIBS: biopython, modeltest-ng, mafft, raxml-ng
+# REQUIRED PYTHON LIBS: pandas, biopython, mafft, IQ-tree
 import os
+from Bio import SeqIO
+from Bio.SeqRecord import SeqRecord
+from Bio.Seq import Seq
 import pandas as pd
+import subprocess
 
-# # inputs
-CPU_THREADS = 1
-RAM_GB = 1
-ASSEMLBY_LIST = ["D:/TESTING_SPACE/EGAP_Test_Data/Ps_semilanceata/Ps_semilanceata_EGAP_assembly.fasta",
-                 None,
-                 None,
-                 None,
-                 None]
-SPECIES_LIST = ["Ps_semilanceata",
-                 None,
-                 None,
-                 None,
-                 None]
-GROPUING_LIST = ["in",
-                 "in",
-                 "in",
-                 "out",
-                 "out"]
-COMPLEASM_DB = "basidiomycota"
 
-faa_list = []
-for assembly_file in ASSEMLBY_LIST:
+def run_subprocess_cmd(cmd_list, shell_check):
+    """
+    Run a subprocess command and log its execution.
+
+    Executes the command (as a string or list) using subprocess.Popen, streams its output,
+    and logs whether it succeeded or failed.
+
+    Parameters:
+        cmd_list (str or list): The command to execute.
+        shell_check (bool): Whether to execute the command through the shell.
+
+    Returns:
+        process.returncode (int): The return code of the subprocess.
+    """
+    if isinstance(cmd_list, str):
+        print(f"CMD:\t{cmd_list}")
+        process = subprocess.Popen(cmd_list, shell=shell_check, stdout=subprocess.PIPE,
+                                   stderr=subprocess.STDOUT, text=True)
+    else:
+        print(f"CMD:\t{' '.join(cmd_list)}")
+        process = subprocess.Popen(cmd_list, shell=shell_check, stdout=subprocess.PIPE,
+                                   stderr=subprocess.STDOUT, text=True)
+    for line in process.stdout:
+        print(line, end="")
+    process.wait()
+    if process.returncode != 0:
+        print(f"NOTE:\tCommand failed with return code {process.returncode}")
+    else:
+        print(f"PASS:\tSuccessfully processed command: {' '.join(cmd_list) if isinstance(cmd_list, list) else cmd_list}")
+    return process.returncode
+
+
+def fasta_ext_fixer(assembly_file):
+    """
+    DESCRIPTION.
+
+    Parameters:
+    assembly_file (TYPE): DESCRIPTION.
+
+    Returns:
+    assembly_file (TYPE): DESCRIPTION.
+    fasta_type (TYPE): DESCRIPTION.
+
+    """
     if ".faa" in assembly_file:
         fasta_type = "aa"
         assembly_file = assembly_file.replace(".faa", ".fasta")
     elif ".fna" in assembly_file:
         fasta_type = "nt"
-        assembly_file = assembly_file.replace(".fna", ".fasta")
-    if "_" in os.path.basename(assembly_file):
-        species_id_list = os.path.basename(assembly_file).split("_")
-        SPECIES_ID = "_".join(species_id_list[:2])
+        assembly_file = assembly_file.replace(".fna", ".fasta")       
     else:
-        print("Unable to parse input fasta, please rename to have the Species and Genus written like Panaeolus bisporus -> Pa_bisporus_(rest_of_file_name).fasta")
+        fasta_type = None
+        assembly_file = assembly_file
+    return assembly_file, fasta_type
 
-    # # # Process a single assembly's buscos
+
+if __name__ == "__main__":
+    print("TEST BUSCO TREE")
     
-    # # 1) Determine path to the full_table_busco_format.tsv file. This file contains busco ID's for the gene sequences we have later
+
+    CPU_THREADS = 16
     
-    # # 2) Determine path to the miniprot_output.gff. This file contains a) the sequences that after the first "\t" on the line starting with "##STA"; and b) the ID is nested between the first "\t" and the first "_" in the line starting with "##PAF"
+    ASSEMBLY_LIST = [
+                     ]
+
+    GROUP_LIST = ["in",
+                  "in",
+                  "in",
+                  "in",
+                  "out"]
+    COMPLEASM_LIST = ["basidiomycota", "agaricales"]
     
-    # # 3) For every sequence we want to create a new combined fasta (.faa) file named after the FINAL_ASSEMBLY and COMPLEASM_DB containing each sequence written as follows: f">{sequence_id}\n{sequence}\n"
-
-
-faa_df = pd.DataFrame()
-# # # Process all .faa's for each organism
-
-# # 4) Once we have multiple combined .faa files we need to create a dataframe containing the following for each .faa file: path_to_faa, SPECIES_ID, GROUPING (either in or out)
-
-# # 5) Based on the grouping we want to create a list of all shared busco genes, we can do this by getting the full list of all Sequence ID's in each .faa file as lists and then determine a Shared BUSCO List of sequences that ARE FOUND IN EACH .faa Sequence ID list.
-
-# # 6) Next, for each .faa file we create a copy, rename it replacing the ".faa" with "_Shared_BUSCO_Sequence.faa", then remove any sequences NOT in the Shared BUSCO List of sequences, followed by a removal of all lines containing ID's (with a ">" on them) and then strip all "\n" from it. The goal is a single concatened sequence of ALL Shared Busco sequences that are in the same order for each FINAL_ASSEMBLY/.faa processed. Finally once the concatenated sequence is generated, add the following line as the first line f"{SPECIES_ID}_{COMPLEASM_DB}_Shared_BUSCO_Sequence\n"
-
-
-# # # Combining Sequences and Model Testing
-
-# # 7) We now have a list of all the Shared_BUSCO_Sequences.faa files, make them into a single combined.faa file (preserving sequence id's)
-
-# # 8) MAFFT align: mafft combined_fasta > output_msa
-
-# # 9) RAxML Tree: modeltest-ng-static -i output_msa -d aa -o output_raxml -p CPU_THREADS needs to help us set the variable DETERMINED_MODEL
-
-
-# # # RAxML Tree Generation of Shared BUSCO Genes
-
-# # 10) After model-test-ng has finished running, Build ML Starting tree with RAxML-ng: raxml-ng --msa combined_fasta --model DETERMINED_MODEL --prefix T1 --threads CPU_THREADS -r T1 -P 20
-
-# NEED TO DETERMINE HOW OUTPUT IS BEING GENERATED SO WE CAN RENAME --prefix AND -r APPROPRIATELY
-
-# # 11) Make 1000 bootstrap trees: raxml-ng --bootstrap --msa T1.raxml.rba --model TVM --prefix T2 --threads CPU_THREADS --bs-tree 1000 -r T2 -P 20
-
-# NEED TO DETERMINE HOW OUTPUT IS BEING GENERATED SO WE CAN RENAME --prefix AND -r APPROPRIATELY
-
-# # 12) Check the convergence of the boostrapping test: raxml-ng --bsconverge --bs-trees T2.raxml.bootstraps --prefix Test --threads CPU_THREADS --bs-cutoff 0.03
-
-# NEED TO DETERMINE HOW OUTPUT IS BEING GENERATED SO WE CAN RENAME --prefix APPROPRIATELY
-
-# # 13) Map Support values from Bootstrap test to best scoring ML tree: raxml-ng --support --tree T1.raxml.bestTree --bs-trees T2.raxml.bootstraps --prefix T3 --threads CPU_THREADS
-
-# NEED TO DETERMINE HOW OUTPUT IS BEING GENERATED SO WE CAN RENAME --prefix APPROPRIATELY
+    
+    
+    for COMPLEASM_DB in COMPLEASM_LIST:
+        
+        print("Generating BUSCO ID list shared by ALL species...")
+        busco_id_dict = {}
+        for index, assembly_file in enumerate(ASSEMBLY_LIST):
+            assembly_file, fasta_type = fasta_ext_fixer(assembly_file)
+            if "_" in os.path.basename(assembly_file):
+                species_id_list = os.path.basename(assembly_file).split("_")
+                SPECIES_ID = "_".join(species_id_list[:2])
+            else:
+                print(f"ERROR:\tUnable to parse input fasta for SPECIES_ID: {assembly_file},\n"
+                      "Please rename to have the Species and Genus written like Psilocybe cubensis B+ -> "
+                      "Ps_cubensis-B+_(rest_of_file_name).fasta")
+                continue
+            print(f"Processing Final Assembly & GFF files for: {SPECIES_ID}...")
+            compleasm_out_dir = assembly_file.replace(".fasta",f"_{COMPLEASM_DB}_odb10_compleasm")
+            full_table_busco_format_tsv = os.path.join(compleasm_out_dir, f"{COMPLEASM_DB}_odb10", "full_table_busco_format.tsv")
+            full_table_busco_df = pd.read_csv(full_table_busco_format_tsv, sep='\t')
+            filtered_df = full_table_busco_df[full_table_busco_df['Status'].isin(['Complete', 'Duplicated'])]
+            busco_id_dict[SPECIES_ID] = (GROUP_LIST[index], filtered_df["# Busco id"].tolist())
+        print("PASS:\tBUSCO ID dictionary generated.")
+        # return busco_id_dict
+        
+        
+        
+        shared_busco_ids = None
+        for species_id, (group_type, busco_ids) in busco_id_dict.items():
+            if shared_busco_ids is None:
+                shared_busco_ids = set(busco_ids)
+            else:
+                shared_busco_ids.intersection_update(busco_ids)
+        shared_busco_ids_list = sorted(list(shared_busco_ids))
+        print("PASS:\tNumber of BUSCO IDs shared by ALL species.")
+        # return shared_busco_ids_list
+        
+        
+        
+        print("Generating ordered BUSCO gene sequences for ALL species...")
+        busco_id_fasta_list = []
+        for index, assembly_file in enumerate(ASSEMBLY_LIST):
+            assembly_file, fasta_type = fasta_ext_fixer(assembly_file)
+            base_name = os.path.basename(assembly_file)
+            if "_" in base_name:
+                species_id_list = base_name.split("_")
+                SPECIES_ID = "_".join(species_id_list[:2])
+            else:
+                print(f"ERROR:\tUnable to parse input fasta for SPECIES_ID: {assembly_file},\n"
+                      "NOTE:\tPlease rename it (e.g. 'Ps_cubensis-B+_...')")
+                continue
+            compleasm_out_dir = assembly_file.replace(".fasta", f"_{COMPLEASM_DB}_odb10_compleasm")
+            miniprot_output_gff = os.path.join(compleasm_out_dir, f"{COMPLEASM_DB}_odb10", "miniprot_output.gff")
+            out_faa = os.path.join(compleasm_out_dir, f"{SPECIES_ID}_shared_busco.fasta")
+            if not os.path.isfile(miniprot_output_gff):
+                print(f"NOTE:\tNo GFF file found at: {miniprot_output_gff}")
+                continue
+            with open(miniprot_output_gff, "r") as f:
+                lines = f.read().splitlines()
+            records_dict = {}
+            i = 0
+            n = len(lines)
+            while i < n:
+                line = lines[i].strip()
+                if line.startswith("##PAF"):
+                    fields = line.split("\t")
+                    if len(fields) > 1:
+                        paf_id = fields[1].strip().split("_")[0]
+                    else:
+                        i += 1
+                        continue
+                    matched_busco = None
+                    for busco in shared_busco_ids_list:
+                        if busco in paf_id:
+                            matched_busco = busco
+                            break
+                    i += 1
+                    if i < n and lines[i].startswith("##STA"):
+                        sta_line = lines[i].strip()
+                        prot_seq = sta_line[5:].strip()
+                        i += 1
+                        block_lines = []
+                        while i < n and not lines[i].startswith("##"):
+                            block_lines.append(lines[i])
+                            i += 1
+                        if matched_busco is None:
+                            block_string = " ".join(block_lines)
+                            for busco in shared_busco_ids_list:
+                                if busco in block_string:
+                                    matched_busco = busco
+                                    break
+                    if matched_busco is not None:
+                            rec = SeqRecord(Seq(prot_seq),
+                                            id=paf_id,
+                                            description=f"Shared_{COMPLEASM_DB}_BUSCO:{SPECIES_ID}|{matched_busco}")
+                            records_dict[matched_busco] = rec
+                    else:
+                        pass
+                else:
+                    i += 1
+            ordered_records = []
+            for busco in shared_busco_ids_list:
+                if busco in records_dict:
+                    ordered_records.append(records_dict[busco])
+            if ordered_records:
+                SeqIO.write(ordered_records, out_faa, "fasta")
+                busco_id_fasta_list.append(out_faa)
+                print(f"PASS:\t[{SPECIES_ID}] Wrote {len(ordered_records)} BUSCO-matching reads to {out_faa}")
+            else:
+                print(f"[{SPECIES_ID}] No BUSCO matches found in {miniprot_output_gff}")
+        # return busco_id_fasta_list
+        
+        
+        print("")
+        busco_seq_list = []
+        for busco_id_fasta in busco_id_fasta_list:
+            busco_id_fasta, fasta_type = fasta_ext_fixer(busco_id_fasta)
+            base_name = os.path.basename(busco_id_fasta)
+            if "_" in base_name:
+                species_id_list = base_name.split("_")
+                SPECIES_ID = "_".join(species_id_list[:2])
+            else:
+                print(f"ERROR:\tUnable to parse input fasta for SPECIES_ID: {busco_id_fasta},\n"
+                      "Please rename it (e.g. 'Ps_cubensis-B+_...')")
+                continue
+            busco_seq_fasta = busco_id_fasta.replace(".fasta","_SEQ.fasta")
+            with open(busco_id_fasta, "r") as infile, open(busco_seq_fasta, "w") as outfile:
+                outfile.write("".join(line.strip() for line in infile if not line.startswith(">")))
+            
+            with open(busco_seq_fasta, "r") as infile:
+                content = infile.read()
+            
+            with open(busco_seq_fasta, "w") as outfile:
+                outfile.write(f">{SPECIES_ID}-Shared_BUSCO_SEQ\n" + content)
+            busco_seq_list.append(busco_seq_fasta)
+        print(f"PASS:\tBUSCO Sequence List generated: {busco_seq_list}")
+        # return busco_seq_list
+        
+        
+        
+        
+        combined_fasta_path = f"Combined_{COMPLEASM_DB}_BUSCO_Sequences.fasta"
+        with open(combined_fasta_path, "w") as combined_fasta:
+            for busco_seq_fasta in busco_seq_list:
+                with open(busco_seq_fasta, "r") as infile:
+                    combined_fasta.write(infile.read() + "\n")
+        print(f"PASS:\tCombined FASTA file created: {combined_fasta_path}")
+        # return combined_fasta_path
+        
+        
+        
+        combined_records = []
+        for fasta_file in busco_seq_list:
+            try:
+                records = list(SeqIO.parse(fasta_file, "fasta"))
+                combined_records.extend(records)
+            except Exception as e:
+                print(f"Error parsing {fasta_file}: {e}")
+        
+        combined_fasta_path = f"Combined_{COMPLEASM_DB}_BUSCO_Sequences.fasta"
+        SeqIO.write(combined_records, combined_fasta_path, "fasta")
+        combined_fasta_path, fasta_type = fasta_ext_fixer(combined_fasta_path)
+        base_name = os.path.basename(combined_fasta_path)
+        if "_" in base_name:
+            species_id_list = base_name.split("_")
+            SPECIES_ID = "_".join(species_id_list[:2])
+        else:
+            print(f"ERROR:\tUnable to parse input fasta for SPECIES_ID: {combined_fasta_path},\n"
+                  "Please rename it (e.g. 'Ps_cubensis-B+_...')")
+        with open(combined_fasta_path, "r") as fasta_file:
+            for record in SeqIO.parse(fasta_file, "fasta"):
+                print(record.id)
+        print(f"PASS:\tCombined FASTA file created: {combined_fasta_path}")
+        # return combined_fasta_path
+        
+        
+        
+        output_msa = f"{os.path.splitext(combined_fasta_path)[0]}_alignment.msa"
+        mafft_cmd = f"mafft --thread {CPU_THREADS} --auto {combined_fasta_path} > {output_msa}"
+        _ = run_subprocess_cmd(mafft_cmd, shell_check=True)
+        print(f"PASS:\tMAFFT alignment completed. Alignment saved to: {output_msa}")
+        # return output_msa
+        
+        
+        
+        
+        tree_prefix = "/mnt/d/EGAP/Combined_basidiomycota_BUSCO_Sequences_alignment_iqtree"
+        treefile = tree_prefix + ".treefile"
+        if os.path.exists(treefile):
+            print("SKIP:\tIQTree tree modeling and making; already exists: {treefile}")
+        else:
+            iq_tree = ["iqtree", "-s", output_msa, "-m", "MFP", "-T", int(CPU_THREADS), "--prefix", tree_prefix]
+            _ = run_subprocess_cmd(iq_tree, shell_check=False)
+        print(f"PASS:\tIQTree tree modeling and making. Treefile saved to: {treefile}")
+        # return treefile
+        
+        support_prefix = "/mnt/d/EGAP/Combined_basidiomycota_BUSCO_Sequences_alignment_bootstrap"
+        support_file = support_prefix + ".ufboot"
+        if os.path.exists(support_file):
+            print("SKIP:\tIQTree tree modeling and supporting; already exists: {support_file}")
+        else:
+            iq_support = ["iqtree", "-s", output_msa, "-m", "MFP", "-T", int(CPU_THREADS), "--prefix", support_prefix, "-B", int(1000), "--bnni", "--boot-trees"]
+            _ = run_subprocess_cmd(iq_support, shell_check=False)
+        print(f"PASS:\tIQTree tree modeling and supporting. Support file saved to: {support_file}")
+        # return support_file
+        
+        map_prefix = "/mnt/d/EGAP/Combined_basidiomycota_BUSCO_Sequences_alignment_support"
+        supported_tree_file = ""
+        if os.path.exists(supported_tree_file):
+            print("SKIP:\tIQTree tree support mapping; already exists: {supported_tree_file}")
+        else:
+            iq_map = ["iqtree", "-t", treefile, "--support", support_file, "-T", int(CPU_THREADS), "--prefix", map_prefix]
+            _ = run_subprocess_cmd(iq_map, shell_check=False)
+        print(f"PASS:\tIQTree tree support mapping. Supported & Mapped Treefile saved to: {supported_tree_file}")
+        # return supported_tree_file
