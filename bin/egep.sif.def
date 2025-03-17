@@ -29,7 +29,7 @@ From: ubuntu:20.04
 
     # Create a Conda environment for EGEP and install dependencies
     /bin/bash -c "conda create -c bioconda -c conda-forge -n EGEP_env --yes python>=3.10 \
-                  mafft iqtree ete3 compleasm pandas biopython seaborn matplotlib"
+                  mafft iqtree ete3 compleasm trimal pandas biopython seaborn matplotlib"
 
 %environment
     # Set PATH to include Conda environment
