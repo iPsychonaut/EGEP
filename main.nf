@@ -182,7 +182,7 @@ process runIqTree {
     path msa_file
     val compleasm_db
     output:
-    path "${compleasm_db}_busco_iqtree.*", emit: iqtree_file
+    path "${compleasm_db}_busco_iqtree.*", emit: iqtree_files
     script:
     """
     iqtree -s "${msa_file}" -m MFP -T ${split_cpu_threads} -B 1000 --bnni --prefix "${compleasm_db}_busco_iqtree" --boot-trees
@@ -194,13 +194,13 @@ process convertIqTree {
     tag "Converting IQTree output into Nexus format"
     publishDir "${params.output_dir}/iqtree_outputs/${compleasm_db}_data", mode: 'copy'
     input:
-    path iqtree_file
+    path iqtree_files
     val compleasm_db
     output:
     path "${compleasm_db}_busco_iqtree.nwk", emit: newick_file
     script:
     """
-    python3 ${PWD}/iqtree_newick_conversion.py "${iqtree_file}" "${compleasm_db}_busco_iqtree.nwk"
+    python3 ${PWD}/iqtree_newick_conversion.py "${iqtree_files}" "${compleasm_db}_busco_iqtree.nwk"
     """
 }
 
