@@ -11,96 +11,74 @@ BUSCO IDs and an initial heatmap DataFrame for the Entheome Genome Extraction Pi
 
 @author: ian.bollinger@entheome.org / ian.michael.bollinger@gmail.com
 """
-
-import os
 import sys
 import pandas as pd
 
+def extract_busco_ids(assemblies_file, compleasm_db, tables_file, total_buscos, threshold):
+    print(f"DEBUG: compleasm_db={compleasm_db}, total_buscos={total_buscos}, threshold={threshold}", file=sys.stderr)
+    
+    # Read assemblies and tables
+    with open(assemblies_file) as f:
+        assemblies = [line.strip() for line in f]
+    with open(tables_file) as f:
+        tables = [line.strip() for line in f]
+    print(f"DEBUG: Found {len(assemblies)} assemblies, {len(tables)} tables", file=sys.stderr)
 
-def extract_busco_ids(assemblies_file, tables_file, compleasm_db,
-                      busco_dict_output, all_busco_ids_output, heatmap_df_output):
-    """Extract BUSCO IDs from tables and output a CSV with alignments and BUSCO IDs.
+    # Keep track of original data
+    original_assemblies = assemblies.copy()
+    original_tables = tables.copy()
+    
+    while True:
+        # Get BUSCO IDs for each assembly
+        busco_sets = []
+        assembly_buscos = {}
+        for i, table in enumerate(tables):
+            df = pd.read_csv(table, sep="\t")
+            buscos = set(df[df["Status"].isin(["Complete", "Duplicated"])]["# Busco id"])
+            busco_sets.append(buscos)
+            assembly_buscos[assemblies[i]] = buscos
+            print(f"DEBUG: Assembly {assemblies[i]} has {len(buscos)} BUSCOs", file=sys.stderr)
 
-    Args:
-        assemblies_file (str): Path to the file listing assembly paths.
-        tables_file (str): Path to the file listing BUSCO table paths.
-        compleasm_db (str): Compleasm database identifier (e.g., "basidiomycota").
-        busco_dict_output (str): Path to save the BUSCO ID dictionary CSV.
-        all_busco_ids_output (str): Path to save the list of all unique BUSCO IDs.
-        heatmap_df_output (str): Path to save the heatmap DataFrame CSV.
+        # Find shared BUSCO IDs
+        shared_buscos = set.intersection(*busco_sets) if busco_sets else set()
+        shared_count = len(shared_buscos)
+        total = int(total_buscos)
+        shared_percent = shared_count / total if total > 0 else 0
+        print(f"DEBUG: Shared={shared_count}, Total={total}, Percent={shared_percent*100:.1f}%", file=sys.stderr)
+        
+        # Check threshold
+        if shared_percent >= float(threshold) or len(assemblies) <= 1:
+            break
+            
+        # Remove assembly with smallest overlap
+        min_overlap = float('inf')
+        assembly_to_remove = None
+        for asm, buscos in assembly_buscos.items():
+            overlap = len(buscos & shared_buscos)
+            if overlap < min_overlap:
+                min_overlap = overlap
+                assembly_to_remove = asm
+                
+        remove_index = assemblies.index(assembly_to_remove)
+        assemblies.pop(remove_index)
+        tables.pop(remove_index)
+        print(f"Removed {assembly_to_remove} - shared BUSCOs dropped to {shared_count} ({shared_percent*100:.1f}%)", file=sys.stderr)
 
-    Returns:
-        None: Outputs are written to the specified files.
-    """
-    try:
-        with open(assemblies_file, "r") as f:
-            assemblies = [line.strip() for line in f]
-        with open(tables_file, "r") as f:
-            tables = [line.strip() for line in f]
-    except FileNotFoundError as e:
-        print(f"Error: Input file not found: {e.filename}", file=sys.stderr)
-        sys.exit(1)
+    # Write shared BUSCO IDs to CSV
+    with open(f"{compleasm_db}_busco_shared.csv", "w") as f:
+        f.write("assembly,shared_busco_ids\n")
+        for asm in original_assemblies:
+            f.write(f"{asm},{','.join(shared_buscos)}\n")
 
-    if len(assemblies) != len(tables):
-        print(f"Error: Mismatch between number of assemblies ({len(assemblies)}) and tables ({len(tables)})", file=sys.stderr)
-        sys.exit(1)
+    # Calculate and write overlap string
+    overlap_str = f"Shared BUSCO ID overlap for {compleasm_db}: {shared_count}/{total} ({shared_percent*100:.1f}%)"
+    with open(f"{compleasm_db}_busco_overlap.txt", "w") as f:
+        f.write(overlap_str)
 
-    busco_id_dict = {}
-    all_busco_ids = set()
-
-    # Extract BUSCO IDs from tables using full assembly paths as keys
-    for asm, tab in zip(assemblies, tables):
-        print(f"Processing assembly: {asm}...", file=sys.stderr)
-        try:
-            df = pd.read_csv(tab, sep="\t")
-            buscos = df[df["Status"].isin(["Complete", "Duplicated"])]["# Busco id"].tolist()
-            busco_id_dict[asm] = buscos
-            all_busco_ids.update(buscos)
-        except FileNotFoundError:
-            print(f"Error: Table file not found: {tab}", file=sys.stderr)
-            continue
-        except pd.errors.EmptyDataError:
-            print(f"Error: BUSCO table is empty or malformed: {tab}", file=sys.stderr)
-            continue
-
-    if not busco_id_dict:
-        print("Error: No valid BUSCO data extracted from tables", file=sys.stderr)
-        sys.exit(1)
-
-    # Save all BUSCO IDs
-    with open(all_busco_ids_output, "w") as f:
-        f.write("\n".join(sorted(all_busco_ids)))
-    print("PASS:\tAll unique BUSCO IDs saved.", file=sys.stderr)
-
-    # Build initial heatmap DataFrame (using assembly basenames for readability)
-    heatmap_data = pd.DataFrame(0, index=sorted(all_busco_ids), 
-                              columns=[os.path.basename(asm) for asm in busco_id_dict.keys()])
-    for asm, buscos in busco_id_dict.items():
-        col_name = os.path.basename(asm)
-        for busco in buscos:
-            heatmap_data.loc[busco, col_name] = 1
-    heatmap_data.to_csv(heatmap_df_output)
-    print("PASS:\tHeatmap DataFrame saved.", file=sys.stderr)
-
-    # Save busco_id_dict as CSV with alignments and BUSCO lists
-    dict_df = pd.DataFrame(
-        [(asm, ",".join(buscos)) for asm, buscos in busco_id_dict.items()],
-        columns=["alignment", "busco_ids"]
-    )
-    dict_df.to_csv(busco_dict_output, index=False)
-    print("PASS:\tBUSCO ID dictionary saved as CSV with alignments.", file=sys.stderr)
-
+    print(f"DEBUG: Wrote overlap: {overlap_str}", file=sys.stderr)
 
 if __name__ == "__main__":
-    if len(sys.argv) != 7:
-        print(
-            "Usage: python extract_busco_ids.py <assemblies_file> <tables_file> "
-            "<compleasm_db> <busco_dict_output> <all_busco_ids_output> "
-            "<heatmap_df_output>",
-            file=sys.stderr
-        )
+    if len(sys.argv) != 6:
+        print("Usage: python extract_busco_ids.py <assemblies_file> <compleasm_db> <tables_file> <total_buscos> <threshold>")
         sys.exit(1)
-    extract_busco_ids(
-        sys.argv[1], sys.argv[2], sys.argv[3],
-        sys.argv[4], sys.argv[5], sys.argv[6]
-    )
+    extract_busco_ids(sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5])
