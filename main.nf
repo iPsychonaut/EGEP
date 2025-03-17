@@ -1,19 +1,6 @@
 #!/usr/bin/env nextflow
 
-// Example usage:
-// nextflow run main.nf \
-// --base_folder "/mnt/d/TESTING_SPACE/EGEP_Test_Data" \
-// --compleasm_list "basidiomycota,agaricales" \
-// --in_genus "Psilocybe" \
-// --out_genus "Agrocybe" \
-// --cpu_threads 12 \
-// --output_dir "/mnt/d/TESTING_SPACE/EGEP_Test_Data/EGEP_SharedBUSCOTree" \
-// --overlap_threshold 0.3 \
-// --calib_mean 67.6 \
-// --calib_sigma 6 \
-// -with-singularity ${PWD}/bin/egep.sif
-
-// Input parameters with CLI override capability
+// Input parameters
 params.base_folder = params.base_folder ?: "/mnt/d/TESTING_SPACE/EGAP_Test_Data"
 params.compleasm_list = params.compleasm_list ?: "basidiomycota,agaricales"
 params.in_genus = params.in_genus ?: "Psilocybe"
@@ -28,23 +15,24 @@ params.calib_sigma = params.calib_sigma ?: 6
 def compleasm_list = params.compleasm_list.split(',').toList()
 compleasm_ch = Channel.fromList(compleasm_list)
 
-// Calculate number of parallel processes and split CPU threads
+// Define total BUSCO counts (will be populated from filterAssemblies output)
+def busco_totals = [:]  // Empty map, filled later from total_buscos_ch
+def threshold = params.overlap_threshold
+
+// Calculate CPU split
 def num_processes = compleasm_list.size()
 def split_cpu_threads = (params.cpu_threads / num_processes).intValue() ?: 1
 
-// Process 1: Find FASTA files using the Python script
+// Process 1: Find FASTA files
 process findAssemblyList {
     tag "Finding assembly list"
     publishDir "${params.output_dir}/assembly_lists", mode: 'copy'
-
     input:
     val base_folder
     val in_genus
     val out_genus
-
     output:
     path "in-${in_genus}_out-${out_genus}_assemblies.txt"
-
     script:
     """
     #!/bin/bash
@@ -52,19 +40,16 @@ process findAssemblyList {
     """
 }
 
-// Process 2: Generate BUSCOs using the Python script
+// Process 2: Generate BUSCOs
 process generateNecessaryBuscos {
     tag "Generating/Compiling BUSCOs for ${compleasm_db}"
     publishDir "${params.output_dir}/compleasm_outputs", mode: 'copy'
-
     input:
     path assembly_list
     val compleasm_db
-
     output:
-    path "${compleasm_db}_busco_files.txt"  // Individual output per compleasm_db (optional)
-    path "temp_${compleasm_db}_compiled_busco_files.json", emit: compiled_list  // JSON file per compleasm_db
-
+    path "${compleasm_db}_busco_files.txt"
+    path "temp_${compleasm_db}_compiled_busco_files.json", emit: compiled_list
     script:
     """
     #!/bin/bash
@@ -72,215 +57,375 @@ process generateNecessaryBuscos {
     """
 }
 
-// Process 3: Initialize the compiled list file
+// Process 3: Initialize compiled list
 process initializeCompiledList {
     tag "Initializing compiled BUSCO list"
     publishDir "${params.output_dir}", mode: 'copy'
-
     input:
     path temp_compiled_files
-
     output:
     path "final_compiled_busco_files.json"
-
     script:
     """
     #!/usr/bin/env python3
     import json
-    import sys
-
     compiled_data = {}
     for file in "${temp_compiled_files}".split():
         db_name = file.split('temp_')[1].split('_compiled')[0]
         with open(file, 'r') as f:
             data = json.load(f)
             compiled_data[db_name] = data
-
     with open('final_compiled_busco_files.json', 'w') as f:
         json.dump(compiled_data, f, indent=2)
     """
 }
 
-// Process 4: Filter assemblies based on BUSCO completeness
+// Process 4: Filter assemblies
 process filterAssemblies {
-    tag "Filtering assemblies based on BUSCO completeness"
+    tag "Filtering assemblies for ${compleasm_db}"
     publishDir "${params.output_dir}/filtered_outputs", mode: 'copy'
-
     input:
     path assembly_list
+    val compleasm_db
     path compiled_busco_file
-
     output:
-    path "filtered_assemblies.txt"
-    path "filtered_tables.txt"
-    path "removed_assemblies.csv"
-
+    path "${compleasm_db}_filtered_assemblies.txt", emit: filtered_assemblies
+    path "${compleasm_db}_filtered_tables.txt", emit: filtered_tables
+    path "${compleasm_db}_removed_assemblies.csv", emit: removed_assemblies
+    path "${compleasm_db}_total_buscos.txt", emit: total_buscos
     script:
     """
     #!/bin/bash
-    python3 ${PWD}/bin/filter_assemblies.py "${assembly_list}" "${compiled_busco_file}"
+    python3 ${PWD}/bin/filter_assemblies.py "${assembly_list}" "${compiled_busco_file}" "${compleasm_db}"
     """
 }
 
 // Process 5: Extract initial BUSCO IDs
 process extractInitialBuscos {
-    tag "Extracting initial BUSCO IDs for ${compleasm_db}"
-    publishDir "${params.output_dir}/busco_analysis/${compleasm_db}", mode: 'copy'
-
+    tag "Extracting BUSCO IDs for ${compleasm_db}"
+    publishDir "${params.output_dir}/busco_analysis", mode: 'copy'
     input:
     path assemblies
+    val compleasm_db
     path tables
-    val compleasm_db
-
+    path total_buscos_file  // Added to get dynamic total_buscos
     output:
-    path "${compleasm_db}_busco_id_dict.csv", emit: busco_dict
-    path "${compleasm_db}_all_busco_ids.txt", emit: all_busco_ids
-    path "${compleasm_db}_heatmap_data_before.csv", emit: heatmap_df_before
-    path assemblies, emit: assemblies  // Pass-through assemblies
-
+    path "${compleasm_db}_busco_shared.csv", emit: busco_shared
+    path "${compleasm_db}_busco_overlap.txt", emit: overlap_string
     script:
     """
     #!/bin/bash
-    python3 ${PWD}/bin/extract_busco_ids.py "${assemblies}" "${tables}" "${compleasm_db}" "${compleasm_db}_busco_id_dict.csv" "${compleasm_db}_all_busco_ids.txt" "${compleasm_db}_heatmap_data_before.csv"
+    echo "DEBUG: compleasm_db=${compleasm_db}"
+    total=\$(cat "${total_buscos_file}")
+    echo "DEBUG: total_buscos=\${total}"
+    echo "DEBUG: assemblies=${assemblies}"
+    echo "DEBUG: tables=${tables}"
+    python3 ${PWD}/bin/extract_busco_ids.py "${assemblies}" "${compleasm_db}" "${tables}" "\${total}" "${threshold}"
     """
 }
 
-// Process 6: Filter assemblies by BUSCO overlap
-process filterBuscosByOverlap {
-    tag "Filtering BUSCOs by overlap for ${compleasm_db}"
-    publishDir "${params.output_dir}/busco_analysis/${compleasm_db}", mode: 'copy'
-
+// Process 6: Extract and concatenate BUSCO sequences
+process extractBuscoSequences {
+    tag "Extracting BUSCO sequences for ${compleasm_db}"
+    publishDir "${params.output_dir}/sequence_alignments/${compleasm_db}_data", mode: 'copy'
     input:
+    path busco_shared_csv
     val compleasm_db
-    path busco_dict_csv
-    path all_busco_ids 
-    path assemblies
-    val overlap_threshold
-
     output:
-    path "${compleasm_db}_shared_busco_ids.txt", emit: shared_busco
-    path "${compleasm_db}_filtered_assemblies.txt", emit: filtered_assemblies
-    path "${compleasm_db}_heatmap_data_after.csv", emit: heatmap_df_after
-    path "${compleasm_db}_shared_busco_dict.csv", emit: shared_busco_dict
-
+    path "${compleasm_db}_busco_shared_sequences.fasta", emit: busco_sequences
     script:
     """
     #!/bin/bash
-    python3 ${PWD}/bin/filter_busco_overlaps.py "${busco_dict_csv}" "${all_busco_ids}" "${assemblies}" "${compleasm_db}" "${overlap_threshold}" "${compleasm_db}_shared_busco_ids.txt" "${compleasm_db}_filtered_assemblies.txt" "${compleasm_db}_heatmap_data_after.csv"
+    python3 ${PWD}/bin/extract_sequences.py "${busco_shared_csv}" "${compleasm_db}"
     """
 }
 
-// Graphics Generation Process: Plot BUSCO ID Overlap Heatmap
-process plotPreFiltBuscoOverlap {
-    tag "Generating BUSCO ID Overlap Heatmap for ${compleasm_db}"
-    publishDir "${params.output_dir}/busco_analysis/${compleasm_db}", mode: 'copy'
-
+// Process 7: Align sequences with MAFFT
+process alignSequencesWithMafft {
+    tag "Aligning sequences for ${compleasm_db} (This can take a while; the larger the dataset, the longer it takes.)"
+    publishDir "${params.output_dir}/sequence_alignments/${compleasm_db}_data", mode: 'copy'
     input:
+    path busco_sequences_file
     val compleasm_db
-    val stage
-    path heatmap_df_file
-
     output:
-    path "${compleasm_db}_heatmap_${stage}.png", emit: heatmap_png
-
+    path "${compleasm_db}_busco_alignment.msa", emit: msa_file
     script:
     """
-    #!/bin/bash
-    python3 ${PWD}/bin/plot_heatmap.py "${heatmap_df_file}" "${compleasm_db}_heatmap_${stage}.png" "${compleasm_db} BUSCO Overlap (${stage})"
+    mafft --thread ${split_cpu_threads} --auto "${busco_sequences_file}" > "${compleasm_db}_busco_alignment.msa"
     """
 }
-process plotPostFiltBuscoOverlap {
-    tag "Generating BUSCO ID Overlap Heatmap for ${compleasm_db}"
-    publishDir "${params.output_dir}/busco_analysis/${compleasm_db}", mode: 'copy'
 
+// Process 8: 
+process trimAlignmentWithTrimal {
+    tag "Trimming alignment for ${compleasm_db}"
+    publishDir "${params.output_dir}/sequence_alignments/${compleasm_db}_data", mode: 'copy'
     input:
+    path msa_file
     val compleasm_db
-    val stage
-    path heatmap_df_file
-
     output:
-    path "${compleasm_db}_heatmap_${stage}.png", emit: heatmap_png
-
+    path "${compleasm_db}_busco_alignment_trimmed.msa", emit: trimmed_msa_file
     script:
     """
-    #!/bin/bash
-    python3 ${PWD}/bin/plot_heatmap.py "${heatmap_df_file}" "${compleasm_db}_heatmap_${stage}.png" "${compleasm_db} BUSCO Overlap (${stage})"
+    trimal -in "${msa_file}" \
+           -out "${compleasm_db}_busco_alignment_trimmed.msa" \
+           -gt 0.8 \
+           -st 0.1 \
+           -cons 60
     """
 }
 
-// Process 7: Extract sequences from GFF files and combine into a single FASTA
-process extractSequences {
+// Process 9: Build IQTree using Model Finder
+process runIqTree {
+    tag "Building tree for ${compleasm_db} (This can take a while; the larger the dataset, the longer it takes.)"
+    publishDir "${params.output_dir}/iqtree_outputs/${compleasm_db}_data", mode: 'copy'
     input:
-    val compleasm_db), path(assemblies) from filtered_assemblies_ch
-    tuple val(compleasm_db_shared), path(shared_busco_ids) from shared_busco_ch
-
+    path msa_file
+    val compleasm_db
     output:
-    tuple val(compleasm_db), path("Combined_${compleasm_db}_BUSCO_Sequences.fasta") into fasta_ch
-
+    path "${compleasm_db}_busco_iqtree.*", emit: iqtree_file
     script:
     """
-    extract_sequences.py "${assemblies}" "${shared_busco_ids}" "${compleasm_db}" "Combined_${compleasm_db}_BUSCO_Sequences.fasta"
+    iqtree -s "${msa_file}" -m MFP -T ${split_cpu_threads} -B 1000 --bnni --prefix "${compleasm_db}_busco_iqtree" --boot-trees
     """
 }
+
+// Process 10: Convert IQTree file into Newick File Format
+process convertIqTree {
+    tag "Converting IQTree output into Nexus format"
+    publishDir "${params.output_dir}/iqtree_outputs/${compleasm_db}_data", mode: 'copy'
+    input:
+    path iqtree_file
+    val compleasm_db
+    output:
+    path "${compleasm_db}_busco_iqtree.nwk", emit: newick_file
+    script:
+    """
+    python3 ${PWD}/iqtree_newick_conversion.py "${iqtree_file}" "${compleasm_db}_busco_iqtree.nwk"
+    """
+}
+
+
+// UNTESTED PROCESSES BUT THE DESIRED FUTURE PATHS, CODE MAY NOT FUNCTION OR PERFORM INTENDED TASK AS IT IS ROUGH PLACEHOLDER
+
+// Process _: Extracting Best Model from IQTree output
+process extractBestModel {
+    tag "Extracting best model for ${compleasm_db}"
+    publishDir "${params.output_dir}/iqtree_outputs/${compleasm_db}_data", mode: 'copy'
+    input:
+    path iqtree_files
+    val compleasm_db
+    output:
+    path "${compleasm_db}_best_model.txt", emit: best_model
+    script:
+    """
+    # Extract best-fit model from IQ-TREE log
+    grep "Best-fit model:" "${compleasm_db}_busco_iqtree.log" | awk '{print \$NF}' > temp_model.txt || echo "JTT" > temp_model.txt
+    
+    # Map to BEAST2-compatible model (simplified example)
+    MODEL=\$(cat temp_model.txt | sed 's/+.*//')  # Strip rate variation (e.g., +G, +I)
+    case \$MODEL in
+        "JTT"|"LG"|"WAG") echo "\$MODEL" > "${compleasm_db}_best_model.txt" ;;
+        *) echo "JTT" > "${compleasm_db}_best_model.txt" ;;  # Default to JTT if unsupported
+    esac
+    """
+}
+
+// Process _:
+process convertToNexus {
+    tag "Converting alignment to Nexus for ${compleasm_db}"
+    publishDir "${params.output_dir}/sequence_alignments/${compleasm_db}_data", mode: 'copy'
+    input:
+    path msa_file
+    val compleasm_db
+    output:
+    path "${compleasm_db}_busco_alignment.nexus", emit: nexus_file
+    script:
+    """
+    # Use a simple Python script or tool to convert FASTA to Nexus
+    python3 - <<EOF
+from Bio import AlignIO
+alignment = AlignIO.read("${msa_file}", "fasta")
+with open("${compleasm_db}_busco_alignment.nexus", "w") as f:
+    AlignIO.write(alignment, f, "nexus")
+EOF
+    """
+}
+
+// Process _: Run BEAST2
+process runBEAST2 {
+    tag "Running BEAST2 for ${compleasm_db}"
+    publishDir "${params.output_dir}/beast2_outputs/${compleasm_db}_data", mode: 'copy'
+    input:
+    path nexus_file
+    path newick_file
+    path best_model_file
+    val compleasm_db
+    output:
+    path "${compleasm_db}_beast.xml"
+    path "${compleasm_db}_beast.log"
+    path "${compleasm_db}_beast.trees"
+    path "${compleasm_db}_beast_mcc.tree"
+    script:
+    """
+    # Read the best model
+    BEST_MODEL=\$(cat "${best_model_file}")
+
+    # Read the Newick tree
+    TREE=\$(cat "${newick_file}")
+
+    # Generate BEAST2 XML
+    cat > "${compleasm_db}_beast.xml" << 'EOF'
+<?xml version="1.0" standalone="yes"?>
+<beast version="2.7" namespace="beast.core:beast.evolution.alignment:beast.evolution.tree.coalescent:beast.core.util:beast.evolution.speciation:beast.evolution.substitutionmodel:beast.math.distributions">
+  <data id="alignment" spec="Alignment" fileName="${nexus_file}"/>
+  
+  <run id="mcmc" spec="MCMC" chainLength="50000000">
+    <state>
+      <tree id="Tree.t:alignment" spec="beast.evolution.tree.Tree">
+        <taxonset id="taxa" spec="TaxonSet">
+          <alignment idref="alignment"/>
+        </taxonset>
+        <trait id="date" spec="beast.evolution.tree.TraitSet" traitname="date-backward" value="0">
+          <taxa idref="taxa"/>
+        </trait>
+        <newick id="startingTree" spec="beast.util.TreeParser" newick="\${TREE}"/>
+      </tree>
+      <parameter id="clockRate.c:alignment" spec="RealParameter" value="1.0"/>
+    </state>
+    
+    <distribution id="prior" spec="util.CompoundDistribution">
+      <distribution id="YuleModel.t:alignment" spec="beast.evolution.speciation.YuleModel">
+        <birthRate id="birthRate.t:alignment" spec="RealParameter" value="0.1" lower="0.0" upper="10.0"/>
+      </distribution>
+      <distribution id="Agrocybe_Psilocybe_calib" spec="beast.math.distributions.Prior">
+        <x id="tmrca.Agrocybe" spec="beast.evolution.tree.MRCAPrior" tree="@Tree.t:alignment">
+          <taxonset id="Agrocybe" spec="TaxonSet">
+            <taxon idref="Agrocybe"/> <!-- Adjust taxon name based on your data -->
+          </taxonset>
+        </x>
+        <distr spec="beast.math.distributions.Normal">
+          <parameter name="mean" value="${params.calib_mean}"/>
+          <parameter name="sigma" value="${params.calib_sigma}"/>
+        </distr>
+      </distribution>
+    </distribution>
+    
+    <operator id="clockScaler" spec="ScaleOperator" parameter="@clockRate.c:alignment" scaleFactor="0.5" weight="1.0"/>
+    <operator id="treeScaler" spec="TreeScaler" tree="@Tree.t:alignment" scaleFactor="0.5" weight="1.0"/>
+    <operator id="uniformOperator" spec="Uniform" tree="@Tree.t:alignment" weight="10.0"/>
+    <logger fileName="${compleasm_db}_beast.log" logEvery="5000">
+      <log idref="clockRate.c:alignment"/>
+      <log idref="YuleModel.t:alignment"/>
+    </logger>
+    <logger fileName="${compleasm_db}_beast.trees" logEvery="5000">
+      <log idref="Tree.t:alignment"/>
+    </logger>
+  </run>
+  
+  <siteModel spec="SiteModel" id="siteModel">
+    <substModel spec="beast.evolution.substitutionmodel.\${BEST_MODEL}"/>
+    <parameter id="proportionInvariant" estimate="true" lower="0.0" upper="1.0" value="0.0"/>
+    <frequencies id="empiricalFreqs" spec="Frequencies" data="@alignment"/>
+  </siteModel>
+  
+  <branchRateModel id="StrictClock" spec="beast.evolution.branchratemodel.StrictClockModel" clock.rate="@clockRate.c:alignment"/>
+</beast>
+EOF
+
+    # Run BEAST2
+    beast "${compleasm_db}_beast.xml"
+
+    # Generate MCC tree (10% burn-in)
+    treeannotator -burnin 10 -heights ca "${compleasm_db}_beast.trees" "${compleasm_db}_beast_mcc.tree"
+    """
+}
+
+// END PLACEHOLDER SECTION
+
 
 workflow {
-    // Invoke Process 1 and capture its output
+    // Step 1: Find assemblies
     assembly_list_ch = findAssemblyList(params.base_folder, params.in_genus, params.out_genus)
-            
-    // Invoke Process 2 with the output from Process 1
-    generateNecessaryBuscos(assembly_list_ch, compleasm_ch)
-
-    // Collect all temp_${compleasm_db}_compiled_busco_files.json and initialize the list
-    generateNecessaryBuscos.out.compiled_list
-        .collect()
-        .set { all_temp_compiled_files }
-
-    // Invoke Process 3 to initialize the compiled list
-    compiled_busco_ch = initializeCompiledList(all_temp_compiled_files)
-
-    // Invoke Process 4 to filter assemblies and destructure multiple outputs
-    (filtered_assemblies_ch, filtered_tables_ch, removed_assemblies_ch) = filterAssemblies(assembly_list_ch, compiled_busco_ch)   
-    removed_assemblies_ch
-        .flatMap { file -> 
-            def content = file.text.trim()
-            if (!content) {
-                return "INITIAL BUSCO OUTLIER REMOVAL REPORT: No assemblies were removed (file is empty)."
-            }
-            def lines = content.split('\n')
-            if (lines.size() <= 1) {
-                return "INITIAL BUSCO OUTLIER REMOVAL REPORT: ${lines[0]} (no additional details)."
-            }
-            def header = lines[0]
-            def body = lines[1..-1].join('\n')
-            return "INITIAL BUSCO OUTLIER REMOVAL REPORT:\n${header}\n${body}"
-        }
-        .view { it }
-        
-    // Invoke Process 5: Extract BUSCO IDs for each Compleasm DB
-    extractInitialBuscos(filtered_assemblies_ch, filtered_tables_ch, compleasm_ch)
-
-    // Generate "before" heatmap for each compleasm_db
-    plotPreFiltBuscoOverlap(
-        compleasm_ch,
-        "Pre-filter",
-        extractInitialBuscos.out.heatmap_df_before
-    )
-
-    // Invoke Process 6: Filter Assemblies based on shred BUSCO_IDs for each Compleasm DB
-    filterBuscosByOverlap(
-        compleasm_ch,
-        extractInitialBuscos.out.busco_dict,
-        extractInitialBuscos.out.all_busco_ids,
-        extractInitialBuscos.out.assemblies,
-        params.overlap_threshold
-    )
-
-    // Generate "after" heatmap for each compleasm_db
-    plotPostFiltBuscoOverlap(
-        compleasm_ch,
-        "Post-filter",
-        filterBuscosByOverlap.out.heatmap_df_after
-    )
     
-    // Invoke Process 7: Extract sequences from GFF files and combine into a single FASTA
+    // Step 2: Generate BUSCOs
+    busco_results = generateNecessaryBuscos(assembly_list_ch, compleasm_ch)
+    
+    // Step 3: Collect compiled files
+    compiled_files_ch = busco_results.compiled_list.collect()
+    compiled_busco_ch = initializeCompiledList(compiled_files_ch)
+    
+    // Step 4: Filter assemblies
+    filter_results = filterAssemblies(assembly_list_ch, compleasm_ch, compiled_busco_ch)
+    filtered_assemblies_ch = filter_results.filtered_assemblies
+    filtered_tables_ch = filter_results.filtered_tables
+    removed_assemblies_ch = filter_results.removed_assemblies
+    total_buscos_ch = filter_results.total_buscos
+    
+    // Display removed assemblies
+    removed_assemblies_ch
+        .view { file -> 
+            def content = file.text.trim()
+            if (!content) "INITIAL BUSCO OUTLIER REMOVAL REPORT: No assemblies removed."
+            else "INITIAL BUSCO OUTLIER REMOVAL REPORT:\n${content}"
+        }
+    
+    // Step 5: Extract BUSCO IDs and overlap
+    // Pair inputs explicitly without tuples
+    assemblies_with_db = compleasm_ch
+        .join(filtered_assemblies_ch.map { file -> [file.name.split('_')[0], file] })
+    tables_with_db = compleasm_ch
+        .join(filtered_tables_ch.map { file -> [file.name.split('_')[0], file] })
+    totals_with_db = compleasm_ch
+        .join(total_buscos_ch.map { file -> [file.name.split('_')[0], file] })
+    
+    busco_results = extractInitialBuscos(
+        assemblies_with_db.map { db, file -> file },
+        assemblies_with_db.map { db, file -> db },
+        tables_with_db.map { db, file -> file },
+        totals_with_db.map { db, file -> file }
+    )
+    busco_shared_ch = busco_results.busco_shared
+    overlap_string_ch = busco_results.overlap_string
+    
+    // Print overlap
+    overlap_string_ch.view { file -> file.text.trim() }
+    
+    // Step 6: Extract sequences
+    csv_with_db = compleasm_ch
+        .join(busco_shared_ch.map { file -> [file.name.split('_')[0], file] })
+    busco_sequences_results = extractBuscoSequences(
+        csv_with_db.map { db, file -> file },
+        csv_with_db.map { db, file -> db }
+    )
+    compiled_busco_sequences = busco_sequences_results.busco_sequences
+       
+    // Step 7: MAFFT alignment of compiled shared buscos
+    msa_results = alignSequencesWithMafft(compiled_busco_sequences, compleasm_ch)
+    
+    // Step 8: Clean the alignment with TrimAl
+    trimmed_msa_results = trimAlignmentWithTrimal(msa_results.msa_file, compleasm_ch)
+    
+    // Step 9: Buld IQtree for the compiled shared busco alignments
+    iqtree_results = runIqTree(trimmed_msa_results.trimmed_msa_file, compleasm_ch)
+    
+    // Step 10: Convert to Newick
+    newick_results = convertIqTree(iqtree_results.iqtree_files, compleasm_ch)
+
+    // Step 11: Extract best model
+    model_results = extractBestModel(iqtree_results.iqtree_files, compleasm_ch)
+
+    // Step 12: Convert alignment to Nexus
+    nexus_results = convertToNexus(trimmed_msa_results.msa_file, compleasm_ch)
+
+    // Step 13: Run BEAST2
+    beast_results = runBEAST2(nexus_results.nexus_file, newick_results.newick_file, model_results.best_model, compleasm_ch)
+
+    // Step 14: Print summary
+    printRunSummary(
+        total_buscos_ch,
+        overlap_string_ch,
+        iqtree_results.iqtree_files,
+        beast_results.collect(),
+        compleasm_ch
+    ).view()
 }
