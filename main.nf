@@ -147,15 +147,22 @@ process inferBuscoGeneTrees {
     path "${compleasm_db}_busco_gene_trees.treefile", emit: gene_trees
     script:
     """
-    # Align each BUSCO locus individually
-    mafft --thread ${split_cpu_threads} --auto "${busco_sequences_file}" > temp_alignment.msa
-    
-    # Infer gene trees for each locus
-    iqtree -s temp_alignment.msa \
-           -S . \
-           -m MFP \
-           -T ${split_cpu_threads} \
-           --prefix "${compleasm_db}_busco_gene_trees"
+    #!/bin/bash
+    # Split concatenated FASTA into individual locus files
+    python3 ${PWD}/bin/split_busco_loci.py "${busco_sequences_file}" "locus_files"
+
+    # Align and infer trees for each locus
+    for fasta in locus_files/*.fasta; do
+        locus_name=\$(basename "\$fasta" .fasta)
+        mafft --thread ${split_cpu_threads} --auto "\$fasta" > "locus_files/\${locus_name}_aligned.msa"
+        iqtree -s "locus_files/\${locus_name}_aligned.msa" \
+               -m MFP \
+               -T ${split_cpu_threads} \
+               --prefix "locus_files/\${locus_name}_tree"
+    done
+
+    # Combine all gene trees into one file
+    cat locus_files/*_tree.treefile > "${compleasm_db}_busco_gene_trees.treefile"
     """
 }
 
