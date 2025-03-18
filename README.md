@@ -32,7 +32,7 @@ EGEP (Entheome Genome Extraction Pipeline) is a versatile bioinformatics pipelin
         |                        (Extracts sequences for shared BUSCOs)
         v
 [7. InferBuscoGeneTrees] ----> Gene Trees
-        |                        (MAFFT + IQ-TREE per locus for concordance)
+        |                        (Splits FASTA with split_busco_loci.py, then MAFFT + IQ-TREE per locus)
         v
 [8. AlignSequencesWithMafft] ----> Concatenated Alignment (MSA)
         |                        (Aligns all BUSCO sequences)
@@ -62,7 +62,7 @@ EGEP (Entheome Genome Extraction Pipeline) is a versatile bioinformatics pipelin
 ### Pipeline Details
 This pipeline processes fungal genomic assemblies to produce a dated phylogenetic tree, leveraging BUSCO orthologs and robust phylogenomic methods.
  - Steps 1–6: Start with fungal assemblies, identify and filter BUSCO orthologs using compleasm, and extract shared sequences for concatenation. This ensures only high-quality, conserved markers are used.
- - Step 7: Infer gene trees for each BUSCO locus with MAFFT and IQ-TREE, enabling concordance factor analysis later.
+ - Step 7: Infer gene trees for each BUSCO locus by first splitting the concatenated FASTA with split_busco_loci.py, then aligning with MAFFT and inferring trees with IQ-TREE. This enables concordance factor analysis later.
  - Steps 8–9: Align concatenated sequences with MAFFT, then clean with TrimAl (-gt 0.8, -st 0.1, -cons 60) to reduce noise from annotation errors or gaps, as suggested by Dr. Jason Slot.
  - Step 10: Use IQ-TREE to build a concatenated tree with ultrafast bootstrap (1000 replicates) and concordance factors (gCF/sCF), providing dual support metrics per Dr. Slot’s recommendation.
  - Steps 11–14: Convert outputs to Newick/Nexus formats, extract the best-fit model, and run BEAST2 for molecular clock dating, calibrated at the Agrocybe-Psilocybe split (67.6 ± 6 Mya).
