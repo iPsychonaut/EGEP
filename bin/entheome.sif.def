@@ -1,0 +1,123 @@
+# TO BUILD: sudo singularity build egep.sif egep.sif.def
+
+# TO USE:
+# export FUNANNOTATE_DB=/path/to/databases
+# singularity shell egep.sif -B /path/to/databases:/path/to/databases
+# source /opt/conda/etc/profile.d/conda.sh
+# conda activate funannotate_env
+# funannotate setup -i all -d "$FUNANNOTATE_DB"
+
+# WITH GENEMARK INPUT:
+# singularity shell egep.sif -B /path/to/genemark:/opt/genemark
+# source /opt/conda/etc/profile.d/conda.sh
+# conda activate EGEP_env
+
+Bootstrap: docker
+From: debian:buster
+
+%labels
+    Maintainer Ian M Bollinger <ian.bollinger@entheome.org>
+
+%post
+    export DEBIAN_FRONTEND=noninteractive
+
+    # Set up repositories
+    echo "deb http://deb.debian.org/debian buster main contrib non-free" > /etc/apt/sources.list
+    echo "deb http://deb.debian.org/debian-security buster/updates main contrib non-free" >> /etc/apt/sources.list
+    echo "deb http://deb.debian.org/debian buster-updates main contrib non-free" >> /etc/apt/sources.list
+    echo "Acquire::Check-Valid-Until no;" >> /etc/apt/apt.conf.d/99no-check-valid-until
+
+    # Update and install base dependencies
+    apt-get update && apt-get install -y \
+        wget curl bzip2 ncbi-blast+ git build-essential autoconf automake libtool pkg-config \
+        zlib1g-dev snap augustus augustus-data locales locales-all libgl1 procps strace \
+        python3 python3-pip ninja-build libffi-dev libmount-dev libpcre2-dev libpcre3-dev \
+    && rm -rf /var/lib/apt/lists/* || { echo "Failed to install dependencies"; exit 1; }
+
+    # Create symbolic link for snap compatibility
+    ln -s /usr/bin/snap-hmm /usr/bin/snap || true
+
+    # Install Miniconda
+    wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh || { echo "Failed to download Miniconda"; exit 1; }
+    bash miniconda.sh -b -p /opt/conda || { echo "Failed to install Miniconda"; exit 1; }
+    rm miniconda.sh || { echo "Failed to remove miniconda.sh"; exit 1; }
+
+    # Update PATH for Conda
+    export PATH="/opt/conda/bin:$PATH"
+
+    # Update Conda to the latest version
+    /opt/conda/bin/conda update -y conda || { echo "Failed to update Conda"; exit 1; }
+
+    # Initialize Conda
+    /opt/conda/bin/conda init bash
+
+    # Add Conda channels
+    /bin/bash -c "conda config --add channels defaults && \
+                  conda config --add channels bioconda && \
+                  conda config --add channels conda-forge" || { echo "Failed to configure Conda channels"; exit 1; }
+
+    # Create EGEP_env (without exonerate since it’s installed from source)
+    /bin/bash -c "conda create -n EGEP_env --yes python>=3.10 glib=2.64.6 \
+                  mafft iqtree ete3 compleasm trimal pandas biopython psutil \
+                  gffutils pysam matplotlib scipy clinker-py packaging meson" || { echo "Failed to create EGEP_env"; exit 1; }
+
+    # Debug: Check GLib installation
+    echo "Checking GLib installation:"
+    find /opt/conda -name "glibconfig.h" || { echo "glibconfig.h not found"; exit 1; }
+    ls -l /opt/conda/lib/glib-2.0/include/glibconfig.h || echo "glibconfig.h not in expected location"
+
+    # Set library and pkg-config paths, including EGEP_env
+    export LD_LIBRARY_PATH="/opt/conda/envs/EGEP_env/lib:/opt/conda/lib:$LD_LIBRARY_PATH"
+    export PKG_CONFIG_PATH="/opt/conda/envs/EGEP_env/lib/pkgconfig:/opt/conda/lib/pkgconfig:$PKG_CONFIG_PATH"
+    ldconfig
+    
+    # Build exonerate from source, linking against Conda’s GLib
+    git clone https://github.com/nathanweeks/exonerate.git || { echo "Failed to clone exonerate"; exit 1; }
+    cd exonerate
+    autoreconf -i || { echo "Failed to run autoreconf for exonerate"; exit 1; }
+    GLIB_CFLAGS=$(pkg-config --cflags glib-2.0) || { echo "pkg-config failed to find glib-2.0"; exit 1; }
+    GLIB_LIBS=$(pkg-config --libs glib-2.0) || { echo "pkg-config failed to find glib-2.0 libs"; exit 1; }
+    ./configure --prefix=/usr/local CFLAGS="$GLIB_CFLAGS" LDFLAGS="$GLIB_LIBS" || { echo "Configure failed for exonerate"; exit 1; }
+    make -j$(nproc) || { echo "Make failed for exonerate"; exit 1; }
+    make install || { echo "Make install failed for exonerate"; exit 1; }
+    cd ..
+    rm -rf exonerate
+
+    # Create funannotate_env
+    /bin/bash -c "conda create -n funannotate_env --yes 'python>=3.6,<3.9' funannotate" || { echo "Failed to create funannotate_env"; exit 1; }
+
+    # Adjust fasta symlink
+    rm -f "/opt/conda/envs/funannotate_env/bin/fasta" || true
+    ln -s "/opt/conda/envs/funannotate_env/bin/fasta36" "/opt/conda/envs/funannotate_env/bin/fasta" || true
+
+%environment
+    export PATH="/usr/local/bin:/opt/conda/envs/EGEP_env/bin:/opt/conda/envs/funannotate_env/bin:/opt/conda/bin:/usr/local/bin:$PATH"
+    export LD_LIBRARY_PATH="/opt/conda/lib:/usr/local/lib:$LD_LIBRARY_PATH"
+    export PKG_CONFIG_PATH="/opt/conda/lib/pkgconfig:$PKG_CONFIG_PATH"
+    export AUGUSTUS_CONFIG_PATH="/usr/share/augustus/config"
+    export EVM_HOME="/opt/conda/envs/funannotate_env/opt/evidencemodeler-1.1.1"
+    export PASAHOME="/opt/conda/envs/funannotate_env/opt/pasa-2.4.1"
+    export TRINITYHOME="/opt/conda/envs/funannotate_env/opt/trinity-2.8.5"
+    export QUARRY_PATH="/opt/conda/envs/funannotate_env/opt/codingquarry-2.0/QuarryFiles"
+    export ZOE="/usr/share/snap"
+    export USER="me"
+
+%runscript
+    /bin/bash -c "
+        source /opt/conda/etc/profile.d/conda.sh
+        conda activate EGEP_env
+        if [ -z \"\$FUNANNOTATE_DB\" ]; then
+            echo 'WARNING: FUNANNOTATE_DB is not set. Please set it to your database directory (e.g., export FUNANNOTATE_DB=/path/to/databases) and run \"funannotate setup\" manually if needed.'
+        elif [ ! -d \"\$FUNANNOTATE_DB\" ]; then
+            echo 'WARNING: FUNANNOTATE_DB directory (\$FUNANNOTATE_DB) does not exist. Please run \"funannotate setup -i all -d \$FUNANNOTATE_DB\" to initialize it.'
+        fi
+        exec \"\$@\"
+    "
+
+%help
+    This container provides tools for genomic analysis with EGEP and funannotate environments.
+    To use:
+    - Set FUNANNOTATE_DB to your database directory: export FUNANNOTATE_DB=/path/to/databases
+    - Initialize databases manually if needed: singularity run egep.sif funannotate setup -i all -d \$FUNANNOTATE_DB
+    - Activate environments: source /opt/conda/etc/profile.d/conda.sh; conda activate EGEP_env or funannotate_env
+    - Example with GeneMark: singularity shell egep.sif -B /path/to/genemark:/opt/genemark
