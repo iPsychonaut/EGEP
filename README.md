@@ -8,8 +8,45 @@
 
 EGEP (Entheome Genome Extraction Pipeline) is a versatile bioinformatics pipeline for mining multiple assembled genomes of the same genus of organism for perinant data.
 
-### Pipeline Diagram
+### Pipeline Diagrams
+
 ``` bash
+exonerate_clinker.nf
+
+[Input Data: Fungal Genomic Data]
+        | 
+        v
+[1. DefineInputParameters] ----> Input Channels
+        |                        (Sets base_folder, genes_fasta, primary/secondary genes, etc.)
+        v
+[2. FetchUniProtSequences] ----> Genes FASTA File (optional)
+        |                        (Fetches UniProt sequences if genes_fasta not provided)
+        v
+[3. GenerateProductDict] ----> Product Dictionary JSON
+        |                        (Creates product_dict from genes FASTA)
+        v
+[4. FindAssemblyList] ----> Assembly Paths + List File
+        |                        (Locates FASTA files in base_folder)
+        v
+[5. BlastAndFindBestContig] ----> BLAST Hits + Trimmed FASTA
+        |                        (BLASTs genes against assemblies, extracts best contig regions)
+        v
+[6. ExonerateContigAnalysis] ----> Exonerate GTF Files
+        |                        (Runs Exonerate on trimmed FASTAs to predict gene structures)
+        v
+[7. ConvertContigGtfToGff3] ----> GFF3 Files
+        |                        (Converts GTF to GFF3 format with product_dict)
+        v
+[8. ExtractAASequences] ----> Amino Acid FASTA (optional)
+        |                        (Extracts AA sequences from GTF files)
+        v
+[9. GenerateClinkerPlot] ----> Clinker Plot HTML
+                                 (Generates synteny plot from GFF3 files)
+```
+
+``` bash
+shared_tree.nf
+
 [Input Data: Fungal Assemblies]
         |
         v
@@ -60,7 +97,10 @@ EGEP (Entheome Genome Extraction Pipeline) is a versatile bioinformatics pipelin
 ```
 
 ### Pipeline Details
-This pipeline processes fungal genomic assemblies to produce a dated phylogenetic tree, leveraging BUSCO orthologs and robust phylogenomic methods.
+The exonerate_clinker.nf pipeline processes fungal genomic assemblies and a set of gene sequencse to produce a clinker diagram, leveraging blast and exonerate to locate and find genes of interest.
+ - MORE DETAILS TO COME
+
+The shared_tree.nf pipeline processes fungal genomic assemblies to produce a dated phylogenetic tree, leveraging BUSCO orthologs and robust phylogenomic methods.
  - Steps 1–6: Start with fungal assemblies, identify and filter BUSCO orthologs using compleasm, and extract shared sequences for concatenation. This ensures only high-quality, conserved markers are used.
  - Step 7: Infer gene trees for each BUSCO locus by first splitting the concatenated FASTA with split_busco_loci.py, then aligning with MAFFT and inferring trees with IQ-TREE. This enables concordance factor analysis later.
  - Steps 8–9: Align concatenated sequences with MAFFT, then clean with TrimAl (-gt 0.8, -st 0.1, -cons 60) to reduce noise from annotation errors or gaps, as suggested by Dr. Jason Slot.
