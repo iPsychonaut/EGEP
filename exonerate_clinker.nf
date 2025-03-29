@@ -1,29 +1,6 @@
 #!/usr/bin/env nextflow
 nextflow.enable.dsl=2
 
-// Print ASCII art before pipeline runs
-println """
-      EEEEEEEEEEEEEEE      GGGGGGGGG     EEEEEEEEEEEEEEE  PPPPPPPPPPPPPP
-      EEEEEEEEEEEEEEE    GGGGGGGGGGGGG   EEEEEEEEEEEEEEE  PPPPPP    PPPPP
-      EEEE              GGGGG      GGGG  EEEE             PPPP        PPPP
-      EEEEEEEEE        GGGG              EEEEEEEEE        PPPPPP    PPPPP
-      EEEEEEEEE        GGGG     GGGGGG   EEEEEEEEE        PPPPPPPPPPPPPP
-      EEEE              GGGGG      GGGG  EEEE             PPPP  
-      EEEEEEEEEEEEEEE    GGGGGGGGGGGGG   EEEEEEEEEEEEEEE  PPPP
-      EEEEEEEEEEEEEEE      GGGGGGGGG     EEEEEEEEEEEEEEE  PPPP0
-                                                                    
-               ╔═══════════════════════════════════╗                 
-               ║Entheome Genome Extraction Pipeline║                 
-               ╚═══════════════════════════════════╝                 
-    
-                        exonerate_clinker.nf
-                                  
-        Directory -> FASTA-List -> Exonerate-GFFs -> Clinker Plot
-              
-              Curated & Maintained by Ian M Bollinger               
-                   (ian.bollinger@entheome.org)                     
-"""
-
 // Folder input
 params.base_folder = params.base_folder ?: "/mnt/d/TESTING_SPACE/EGEP_Test_Data"
 
@@ -44,8 +21,40 @@ params.output_dir = params.output_dir ?: "${params.base_folder}/EGEP_exonerate_c
 params.exonerate_pid = params.exonerate_pid ?: 0.9
 params.clinker_pid = params.clinker_pid ?: 0.9
 params.organism_kingdom = params.organism_kingdom ?: "Funga"
-params.max_intron = params.max_intron ?: null
+params.max_intron = params.max_intron ?: nulla
 params.max_trimmed_length = params.max_trimmed_length ?: 5000  // Maximum allowed trimmed sequence length (bp)
+
+// Print ASCII art before pipeline runs
+log.info """\
+      EEEEEEEEEEEEEEE      GGGGGGGGG     EEEEEEEEEEEEEEE  PPPPPPPPPPPPPP
+      EEEEEEEEEEEEEEE    GGGGGGGGGGGGG   EEEEEEEEEEEEEEE  PPPPPP    PPPPP
+      EEEE              GGGGG      GGGG  EEEE             PPPP        PPPP
+      EEEEEEEEE        GGGG              EEEEEEEEE        PPPPPP    PPPPP
+      EEEEEEEEE        GGGG     GGGGGG   EEEEEEEEE        PPPPPPPPPPPPPP
+      EEEE              GGGGG      GGGG  EEEE             PPPP  
+      EEEEEEEEEEEEEEE    GGGGGGGGGGGGG   EEEEEEEEEEEEEEE  PPPP
+      EEEEEEEEEEEEEEE      GGGGGGGGG     EEEEEEEEEEEEEEE  PPPP0
+                                                                    
+               ╔═══════════════════════════════════╗                 
+               ║Entheome Genome Extraction Pipeline║                 
+               ╚═══════════════════════════════════╝                 
+    
+              Curated & Maintained by Ian M Bollinger               
+                   (ian.bollinger@entheome.org)                     
+
+                        exonerate_clinker.nf
+                                  
+        Directory -> FASTA-List -> Exonerate-GFFs -> Clinker Plot
+
+         ==========================
+         input from   : ${params.base_folder}
+         output to    : ${params.output_dir}
+         --
+         run as       : ${workflow.commandLine}
+         started at   : ${workflow.start}
+         config files : ${workflow.configFiles}
+         container    : ${workflow.containerEngine}:${workflow.container}
+         """
 
 // Process to fetch UniProt sequences if genes_fasta is missing
 process fetchUniProtSequences {
