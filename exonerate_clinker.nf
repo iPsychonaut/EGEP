@@ -1,22 +1,16 @@
 #!/usr/bin/env nextflow
 nextflow.enable.dsl=2
 
-// Folder input
+// Input parameters with CLI override capability
 params.base_folder = params.base_folder ?: "/mnt/d/TESTING_SPACE/EGEP_Test_Data"
-
-// Processing input
 params.primary_genes = params.primary_genes ?: null
 params.secondary_genes = params.secondary_genes ?: null
 params.data_type = params.data_type ?: "aa"
 params.genes_fasta = params.genes_fasta ?: null
 params.in_genus = params.in_genus ?: "Genus_Not_Provided"
 params.out_dir = params.out_dir ?: "Unspecified-Genes"
-
-// Compute resources
 params.ram_gb = params.ram_gb ?: 40
 params.cpu_threads = params.cpu_threads ?: 12
-
-// Other inputs
 params.output_dir = params.output_dir ?: "${params.base_folder}/EGEP_exonerate_clinker"
 params.exonerate_pid = params.exonerate_pid ?: 0.9
 params.clinker_pid = params.clinker_pid ?: 0.9
@@ -24,42 +18,48 @@ params.organism_kingdom = params.organism_kingdom ?: "Funga"
 params.max_intron = params.max_intron ?: nulla
 params.max_trimmed_length = params.max_trimmed_length ?: 5000  // Maximum allowed trimmed sequence length (bp)
 
-// Print ASCII art before pipeline runs
-log.info """\
-      EEEEEEEEEEEEEEE      GGGGGGGGG     EEEEEEEEEEEEEEE  PPPPPPPPPPPPPP
-      EEEEEEEEEEEEEEE    GGGGGGGGGGGGG   EEEEEEEEEEEEEEE  PPPPPP    PPPPP
-      EEEE              GGGGG      GGGG  EEEE             PPPP        PPPP
-      EEEEEEEEE        GGGG              EEEEEEEEE        PPPPPP    PPPPP
-      EEEEEEEEE        GGGG     GGGGGG   EEEEEEEEE        PPPPPPPPPPPPPP
-      EEEE              GGGGG      GGGG  EEEE             PPPP  
-      EEEEEEEEEEEEEEE    GGGGGGGGGGGGG   EEEEEEEEEEEEEEE  PPPP
-      EEEEEEEEEEEEEEE      GGGGGGGGG     EEEEEEEEEEEEEEE  PPPP0
-                                                                    
-               ╔═══════════════════════════════════╗                 
-               ║Entheome Genome Extraction Pipeline║                 
-               ╚═══════════════════════════════════╝                 
-    
+log.info("""
+.---.___________________.---.
+|[_]|-------------------|[_]|   ;;;;;;;;;;;  ,;;;;;;;,  ;;;;;;;;;;; ;;;;;;;;;,
+`---'~~~~~~~~~~~~~~~~~~~`---'  ;%%%%%%%%%% d%%:"":%%%%;%%%%%%%%%%%;%%%%%%%%%%%%
+ |||  .--           ,--  |||  |%%%        |%%%        |%%%        |%%%      %%%
+ |||  |-            |  _ |||  |@@@        |@@@        |@@@        |@@@      @@@
+ |||  `--           `--' |||  |@@@@@@@@@  |@@@        |@@@@@@@@@@ |@@@@@@@@@@@@
+ -.|.'-. .-'.   .'-. .'-.|.-  |#########  |###   #####|########## |##########P'
+ ||X||||X||||\\ /||||X||||X||  |###@@@@'   |###   #####|###@@@@@'  |###@@@@@P'
+ -'|`~-' `-~' v `~-' `~-'|`~  |###        |###   `@###|###        |###
+ |||  .--     v     ,--. |||  |888        |?88     88P|888        |888
+ |||  |-      V     |__| |||  ?\$\$\$\$\$\$\$\$\$\$\$ ??\$\$\$\$\$\$\$P ?\$\$\$\$\$\$\$\$\$\$\$|\$\$\$
+ |||  `--   \\<">/   |    |||  `?\$\$\$\$\$\$\$\$\$\$ `?\$\$\$\$\$\$\$P `\$\$\$\$\$\$\$\$\$\$\$|\$\$\$
+.---._____[:::::::]_____.---.   ╔═══════════════════════════════════════════╗
+|[_]|------|:::::|------|[_]|   ║    Entheome Genome Extraction Pipeline    ║
+`---'~~~~~~|:::::|~~~~~~`---'   ╚═══════════════════════════════════════════╝
+
               Curated & Maintained by Ian M Bollinger               
                    (ian.bollinger@entheome.org)                     
 
-                        exonerate_clinker.nf
+                       exonerate-clinker.nf
                                   
-        Directory -> FASTA-List -> Exonerate-GFFs -> Clinker Plot
+  Directory -> Assembly-List -> BLAST & Trim Contigs -> Exonerate -> Clinker
 
-         ==========================
-         input from   : ${params.base_folder}
-         output to    : ${params.output_dir}
-         --
-         run as       : ${workflow.commandLine}
-         started at   : ${workflow.start}
-         config files : ${workflow.configFiles}
-         container    : ${workflow.containerEngine}:${workflow.container}
-         """
+===============================================================================
+
+    input from   : ${params.base_folder}
+    output to    : ${params.output_dir}
+    ----------------------------------------------------------------
+    run as       : ${workflow.commandLine}
+    started at   : ${workflow.start}
+    config files : ${workflow.configFiles}
+    container    : ${workflow.containerEngine}:${workflow.container}
+
+===============================================================================
+""")
 
 // Process to fetch UniProt sequences if genes_fasta is missing
 process fetchUniProtSequences {
     tag "Fetching UniProt sequences"
     publishDir "${params.out_dir}/uniprot_sequences", mode: 'copy'
+    container "${workflow.projectDir}/bin/entheome.sif"
     
     input:
     val primary_genes
@@ -82,6 +82,7 @@ process fetchUniProtSequences {
 process generateProductDict {
     tag "Generating product_dict from: ${genes_fasta.simpleName}"
     publishDir "${params.output_dir}/product_dict", mode: 'copy'
+    container "${workflow.projectDir}/bin/entheome.sif"
 
     input:
     path genes_fasta
@@ -101,7 +102,8 @@ process generateProductDict {
 process findAssemblyList {
     tag "Finding assembly list"
     publishDir "${params.output_dir}/assembly_lists", mode: 'copy'
-    
+    container "${workflow.projectDir}/bin/entheome.sif"
+   
     input:
     val base_folder
     val in_genus
@@ -123,6 +125,7 @@ process blastAndFindBestContig {
     tag "BLASTing and trimming: ${assembly_file.simpleName}"
     publishDir "${params.output_dir}/blast_results", mode: 'copy', pattern: "*.json"
     publishDir "${params.output_dir}/clinker_inputs", mode: 'copy', pattern: "*_trimmed.fasta"
+    container "${workflow.projectDir}/bin/entheome.sif"
 
     input:
     path assembly_file
@@ -181,11 +184,11 @@ process blastAndFindBestContig {
     """
 }
 
-
 // Process to run Exonerate analysis on a list of contig FASTAs using exonerate_fasta_list.py
 process exonerateContigAnalysis {
     tag "Exonerating contigs with ${cpu_threads} threads"
     publishDir "${params.output_dir}/exonerate_results/contig", mode: 'copy'
+    container "${workflow.projectDir}/bin/entheome.sif"
 
     input:
     path contig_fastas  // Collection of FASTA files
@@ -268,6 +271,7 @@ process extractAASequences {
 process generateClinkerPlot {
     tag "Generating clinker plot"
     publishDir "${params.output_dir}", mode: 'copy'
+    container "${workflow.projectDir}/bin/entheome.sif"
 
     input:
     val clinker_pid
@@ -285,7 +289,6 @@ process generateClinkerPlot {
             ${params.output_dir}/clinker_inputs/*.gff3
     """
 }
-
 
 // Workflow
 workflow {
@@ -334,12 +337,11 @@ workflow {
     blast_hits_ch = blast_results_ch.blast_hits
     trimmed_fasta_ch = blast_results_ch.trimmed_fasta
     debug_logs_ch = blast_results_ch.debug_log
-
-    // Step 5: Collect trimmed FASTAs and proceed
     trimmed_fasta_list_ch = trimmed_fasta_ch
         .filter { it && file(it).exists() }
         .collect()
 
+    // Step 5: Exonerate the trimmed contig
     gtf_ch = exonerateContigAnalysis(
         trimmed_fasta_list_ch,
         genes_fasta_ch.first(),
@@ -358,7 +360,7 @@ workflow {
         .collect()
         .ifEmpty { error "No non-empty GFF3 files generated from convertContigGtfToGff3" }
 
-    // Step 10: Generate clinker plot with paired GFF3 and FASTA
+    // Step 7: Generate clinker plot with paired GFF3 and FASTA
     clinker_plot_ch = generateClinkerPlot(
         params.clinker_pid,
         params.out_dir,
