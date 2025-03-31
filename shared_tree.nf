@@ -440,6 +440,32 @@ process runIqTree {
     """
 }
 
+// Process to Convert IQ-TREE to Newick
+process convertIqTree {
+    tag "Converting ${db} IQ-TREE output to Newick format"
+    publishDir "${params.output_dir}/iqtree_outputs/${db}_data", mode: 'copy'
+    container "${workflow.projectDir}/bin/entheome.sif"
+    
+    input:
+    path iqtree_files
+    val db
+    
+    output:
+    path "${db}_busco_iqtree_concord.nwk", emit: newick_file
+    
+    script:
+    """
+    #!/bin/bash
+    outputFile="${db}_busco_iqtree_concord.nwk"
+    if [ -f "${params.output_dir}/iqtree_outputs/${db}_data/${outputFile}" ]; then
+        echo "DEBUG: Output ${outputFile} already exists in ${params.output_dir}/iqtree_outputs/${db}_data, skipping process"
+        ln -s "${params.output_dir}/iqtree_outputs/${db}_data/${outputFile}" "${outputFile}"
+    else
+        cp "${db}_busco_iqtree_concord.treefile" "${outputFile}"
+    fi
+    """
+}
+
 // Workflow
 workflow {
     no_file = file(params.no_file)
@@ -483,4 +509,7 @@ workflow {
 
     // Step 6: Build IQ-TREE with concatenated alignment and gene trees
     iqtree_ch = runIqTree(concatenated_msa_ch.concatenated_msa, gene_trees_ch.gene_trees, compleasm_ch)
+    
+    // Step 7: Convert Tree to Newick format
+    newick_tree_ch = convertIqTree(iqtree_ch, compleasm_ch)
 }
