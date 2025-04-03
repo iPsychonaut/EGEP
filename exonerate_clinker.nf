@@ -60,7 +60,8 @@ process fetchUniProtSequences {
     tag "Fetching UniProt sequences"
     publishDir "${params.out_dir}/uniprot_sequences", mode: 'copy'
     container "${workflow.projectDir}/bin/entheome.sif"
-    
+    beforeScript "source /usr/local/conda/etc/profile.d/conda.sh && conda activate EGEP_env"
+
     input:
     val primary_genes
     val secondary_genes
@@ -83,6 +84,7 @@ process generateProductDict {
     tag "Generating product_dict from: ${genes_fasta.simpleName}"
     publishDir "${params.output_dir}/product_dict", mode: 'copy'
     container "${workflow.projectDir}/bin/entheome.sif"
+    beforeScript "source /usr/local/conda/etc/profile.d/conda.sh && conda activate EGEP_env"
 
     input:
     path genes_fasta
@@ -103,6 +105,7 @@ process findAssemblyList {
     tag "Finding assembly list"
     publishDir "${params.output_dir}/assembly_lists", mode: 'copy'
     container "${workflow.projectDir}/bin/entheome.sif"
+    beforeScript "source /usr/local/conda/etc/profile.d/conda.sh && conda activate EGEP_env"
    
     input:
     val base_folder
@@ -126,6 +129,7 @@ process blastAndFindBestContig {
     publishDir "${params.output_dir}/blast_results", mode: 'copy', pattern: "*.json"
     publishDir "${params.output_dir}/clinker_inputs", mode: 'copy', pattern: "*_trimmed.fasta"
     container "${workflow.projectDir}/bin/entheome.sif"
+    beforeScript "source /usr/local/conda/etc/profile.d/conda.sh && conda activate EGEP_env"
 
     input:
     path assembly_file
@@ -189,6 +193,7 @@ process exonerateContigAnalysis {
     tag "Exonerating contigs with ${cpu_threads} threads"
     publishDir "${params.output_dir}/exonerate_results/contig", mode: 'copy'
     container "${workflow.projectDir}/bin/entheome.sif"
+    beforeScript "source /usr/local/conda/etc/profile.d/conda.sh && conda activate EGEP_env"
 
     input:
     path contig_fastas  // Collection of FASTA files
@@ -223,6 +228,7 @@ process convertContigGtfToGff3 {
     tag "Converting contig GTF to GFF3: ${gtf_file.simpleName}"
     publishDir "${params.output_dir}/clinker_inputs", mode: 'copy'
     container "${workflow.projectDir}/bin/entheome.sif"
+    beforeScript "source /usr/local/conda/etc/profile.d/conda.sh && conda activate EGEP_env"
 
     input:
     path gtf_file
@@ -252,6 +258,7 @@ process extractAASequences {
     tag "Extracting AA sequences from: ${gtf_file.simpleName}"
     publishDir "${params.output_dir}/aa_sequences", mode: 'copy'
     container "${workflow.projectDir}/bin/entheome.sif"
+    beforeScript "source /usr/local/conda/etc/profile.d/conda.sh && conda activate EGEP_env"
 
     input:
     path gtf_file
@@ -272,6 +279,7 @@ process generateClinkerPlot {
     tag "Generating clinker plot"
     publishDir "${params.output_dir}", mode: 'copy'
     container "${workflow.projectDir}/bin/entheome.sif"
+    beforeScript "source /usr/local/conda/etc/profile.d/conda.sh && conda activate EGEP_env"
 
     input:
     val clinker_pid
