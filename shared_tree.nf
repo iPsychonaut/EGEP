@@ -64,6 +64,8 @@ log.info("""
 process findAssemblyList {
     tag "Finding assembly list"
     publishDir "${params.output_dir}/assembly_lists", mode: 'copy'
+    container "${workflow.projectDir}/bin/entheome.sif"
+    beforeScript "source /usr/local/conda/etc/profile.d/conda.sh && conda activate EGEP_env"
 
     input:
     val base_folder
@@ -91,6 +93,7 @@ process generateNecessaryBuscos {
     tag "Generating/Compiling BUSCOs for ${compleasm_db}"
     publishDir "${params.output_dir}/compleasm_outputs", mode: 'copy'
     container "${workflow.projectDir}/bin/entheome.sif"
+    beforeScript "source /usr/local/conda/etc/profile.d/conda.sh && conda activate EGEP_env"
     cpus { params.cpu_threads }  // Request all available CPUs initially
 
     input:
@@ -120,6 +123,7 @@ process initializeCompiledList {
     tag "Initializing compiled BUSCO list"
     publishDir "${params.output_dir}", mode: 'copy'
     container "${workflow.projectDir}/bin/entheome.sif"
+    beforeScript "source /usr/local/conda/etc/profile.d/conda.sh && conda activate EGEP_env"
 
     input:
     path temp_compiled_files
@@ -154,6 +158,7 @@ process filterAssemblies {
     tag "Filtering assemblies for ${compleasm_db}"
     publishDir "${params.output_dir}/filtered_outputs", mode: 'copy'
     container "${workflow.projectDir}/bin/entheome.sif"
+    beforeScript "source /usr/local/conda/etc/profile.d/conda.sh && conda activate EGEP_env"
 
     input:
     path assembly_list
@@ -187,6 +192,7 @@ process extractInitialBuscos {
     tag "Extracting BUSCO IDs for ${compleasm_db}"
     publishDir "${params.output_dir}/busco_analysis", mode: 'copy'
     container "${workflow.projectDir}/bin/entheome.sif"
+    beforeScript "source /usr/local/conda/etc/profile.d/conda.sh && conda activate EGEP_env"
 
     input:
     path assemblies
@@ -218,6 +224,7 @@ process extractSequencesFromBusco {
     tag "Extracting BUSCO sequences for ${compleasm_db}"
     publishDir "${params.output_dir}/sequence_alignments/${compleasm_db}_data", mode: 'copy'
     container "${workflow.projectDir}/bin/entheome.sif"
+    beforeScript "source /usr/local/conda/etc/profile.d/conda.sh && conda activate EGEP_env"
 
     input:
     path busco_shared_csv
@@ -245,6 +252,7 @@ process inferGeneTrees {
     publishDir "${params.output_dir}/iqtree_outputs/${db}_data/gene_trees", mode: 'copy'
     publishDir "${params.output_dir}/sequence_alignments/${db}_data/trimmed_msas", mode: 'copy', pattern: "locus_files/*_trimmed.msa"
     container "${workflow.projectDir}/bin/entheome.sif"
+    beforeScript "source /usr/local/conda/etc/profile.d/conda.sh && conda activate EGEP_env"
     cpus { params.cpu_threads }  // Request all available CPUs initially
 
     input:
@@ -342,6 +350,8 @@ process inferGeneTrees {
 process concatenateTrimmedAlignments {
     tag "Concatenating trimmed alignments for ${db}"
     publishDir "${params.output_dir}/sequence_alignments/${db}_data", mode: 'copy'
+    container "${workflow.projectDir}/bin/entheome.sif"
+    beforeScript "source /usr/local/conda/etc/profile.d/conda.sh && conda activate EGEP_env"
 
     input:
     path trimmed_msa_file
@@ -368,6 +378,7 @@ process trimAlignmentWithTrimal {
     tag "Trimming alignment for ${db}"
     publishDir "${params.output_dir}/sequence_alignments/${db}_data", mode: 'copy'
     container "${workflow.projectDir}/bin/entheome.sif"
+    beforeScript "source /usr/local/conda/etc/profile.d/conda.sh && conda activate EGEP_env"
     cache 'deep'
 
     input:
@@ -409,6 +420,7 @@ process runIqTree {
     tag "Building tree for ${db}"
     publishDir "${params.output_dir}/iqtree_outputs/${db}_data", mode: 'copy'
     container "${workflow.projectDir}/bin/entheome.sif"
+    beforeScript "source /usr/local/conda/etc/profile.d/conda.sh && conda activate EGEP_env"
 
     input:
     path alignment_file
@@ -445,6 +457,7 @@ process convertIqTree {
     tag "Converting ${db} IQ-TREE output to Newick format"
     publishDir "${params.output_dir}/iqtree_outputs/${db}_data", mode: 'copy'
     container "${workflow.projectDir}/bin/entheome.sif"
+    beforeScript "source /usr/local/conda/etc/profile.d/conda.sh && conda activate EGEP_env"
     
     input:
     path iqtree_files
