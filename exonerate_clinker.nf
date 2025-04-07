@@ -1,80 +1,106 @@
 #!/usr/bin/env nextflow
 nextflow.enable.dsl=2
 
-// Folder input
-params.base_folder = params.base_folder ?: "/mnt/d/TESTING_SPACE/EGEP_Test_Data"
-
-// Processing input
-params.primary_genes = params.primary_genes ?: null
-params.secondary_genes = params.secondary_genes ?: null
+// Input parameters with CLI override capability
+params.base_folder = params.base_folder ?: "/mnt/d/TESTING_SPACE/AJ_Test"
+params.primary_genes = params.primary_genes ?: "P0DPA9,P0DPA8,P0DPB2,P0DPA6"
+params.secondary_genes = params.secondary_genes ?: "P0DPB1,P0DPA7,QGJ16928,P0DPA8"
 params.data_type = params.data_type ?: "aa"
-params.genes_fasta = params.genes_fasta ?: null
-params.in_genus = params.in_genus ?: "Genus_Not_Provided"
-params.out_dir = params.out_dir ?: "Unspecified-Genes"
-
-// Compute resources
-params.ram_gb = params.ram_gb ?: 40
+params.genes_fasta = params.genes_fasta ?: "/mnt/d/TESTING_SPACE/psilocybe_psi-cluster_aa.fasta"
+params.in_genus = params.in_genus ?: "Psilocybe"
+params.out_label = params.out_label ?: "Psi-Genes"
+params.ram_gb = params.ram_gb ?: 47
 params.cpu_threads = params.cpu_threads ?: 12
-
-// Other inputs
 params.output_dir = params.output_dir ?: "${params.base_folder}/EGEP_exonerate_clinker"
-params.exonerate_pid = params.exonerate_pid ?: 0.9
-params.clinker_pid = params.clinker_pid ?: 0.9
+params.exonerate_pid = params.exonerate_pid ?: 0.2
+params.clinker_pid = params.clinker_pid ?: 0.2
 params.organism_kingdom = params.organism_kingdom ?: "Funga"
-params.max_intron = params.max_intron ?: nulla
+params.max_intron = params.max_intron ?: 200
 params.max_trimmed_length = params.max_trimmed_length ?: 5000  // Maximum allowed trimmed sequence length (bp)
 
-// Print ASCII art before pipeline runs
-log.info """\
-      EEEEEEEEEEEEEEE      GGGGGGGGG     EEEEEEEEEEEEEEE  PPPPPPPPPPPPPP
-      EEEEEEEEEEEEEEE    GGGGGGGGGGGGG   EEEEEEEEEEEEEEE  PPPPPP    PPPPP
-      EEEE              GGGGG      GGGG  EEEE             PPPP        PPPP
-      EEEEEEEEE        GGGG              EEEEEEEEE        PPPPPP    PPPPP
-      EEEEEEEEE        GGGG     GGGGGG   EEEEEEEEE        PPPPPPPPPPPPPP
-      EEEE              GGGGG      GGGG  EEEE             PPPP  
-      EEEEEEEEEEEEEEE    GGGGGGGGGGGGG   EEEEEEEEEEEEEEE  PPPP
-      EEEEEEEEEEEEEEE      GGGGGGGGG     EEEEEEEEEEEEEEE  PPPP0
-                                                                    
-               ╔═══════════════════════════════════╗                 
-               ║Entheome Genome Extraction Pipeline║                 
-               ╚═══════════════════════════════════╝                 
-    
+log.info("""
+.---.___________________.---.
+|[_]|-------------------|[_]|   ;;;;;;;;;;;  ,;;;;;;;,  ;;;;;;;;;;; ;;;;;;;;;,
+`---'~~~~~~~~~~~~~~~~~~~`---'  ;%%%%%%%%%% d%%:"":%%%%;%%%%%%%%%%%;%%%%%%%%%%%%
+ |||  .--           ,--  |||  |%%%        |%%%        |%%%        |%%%      %%%
+ |||  |-            |  _ |||  |@@@        |@@@        |@@@        |@@@      @@@
+ |||  `--           `--' |||  |@@@@@@@@@  |@@@        |@@@@@@@@@@ |@@@@@@@@@@@@
+ -.|.'-. .-'.   .'-. .'-.|.-  |#########  |###   #####|########## |##########P'
+ ||X||||X||||\\ /||||X||||X||  |###@@@@'   |###   #####|###@@@@@'  |###@@@@@P'
+ -'|`~-' `-~' v `~-' `~-'|`~  |###        |###   `@###|###        |###
+ |||  .--     v     ,--. |||  |888        |?88     88P|888        |888
+ |||  |-      V     |__| |||  ?\$\$\$\$\$\$\$\$\$\$\$ ??\$\$\$\$\$\$\$P ?\$\$\$\$\$\$\$\$\$\$\$|\$\$\$
+ |||  `--   \\<">/   |    |||  `?\$\$\$\$\$\$\$\$\$\$ `?\$\$\$\$\$\$\$P `\$\$\$\$\$\$\$\$\$\$\$|\$\$\$
+.---._____[:::::::]_____.---.   ╔═══════════════════════════════════════════╗
+|[_]|------|:::::|------|[_]|   ║    Entheome Genome Extraction Pipeline    ║
+`---'~~~~~~|:::::|~~~~~~`---'   ╚═══════════════════════════════════════════╝
+
               Curated & Maintained by Ian M Bollinger               
                    (ian.bollinger@entheome.org)                     
 
-                        exonerate_clinker.nf
+                       exonerate-clinker.nf
                                   
-        Directory -> FASTA-List -> Exonerate-GFFs -> Clinker Plot
+  Directory -> Assembly-List -> BLAST & Trim Contigs -> Exonerate -> Clinker
 
-         ==========================
-         input from   : ${params.base_folder}
-         output to    : ${params.output_dir}
-         --
-         run as       : ${workflow.commandLine}
-         started at   : ${workflow.start}
-         config files : ${workflow.configFiles}
-         container    : ${workflow.containerEngine}:${workflow.container}
-         """
+===============================================================================
+
+    started at         : ${workflow.start}
+    config files       : ${workflow.configFiles}
+    container          : ${workflow.containerEngine}:${workflow.container}
+
+    -----------------------------------------------------------------------
+
+    RAM GB             : ${params.ram_gb}
+    CPU threads        : ${params.cpu_threads}
+
+    -----------------------------------------------------------------------
+
+    input from         : ${params.base_folder}
+    output to          : ${params.output_dir}
+
+    -----------------------------------------------------------------------
+
+    organism kingdom   : ${params.organism_kingdom}
+    in-genus           : ${params.in_genus}
+
+    -----------------------------------------------------------------------
+
+    genes fasta        : ${params.genes_fasta}
+    primary genes      : ${params.primary_genes}
+    secondary genes    : ${params.secondary_genes}
+    data type          : ${params.data_type}
+
+    -----------------------------------------------------------------------
+
+    exonerate %ID      : ${params.exonerate_pid}
+    clinker %ID        : ${params.clinker_pid}
+    max intron         : ${params.max_intron}
+    max trimmed length : ${params.max_trimmed_length}
+
+===============================================================================
+""")
 
 // Process to fetch UniProt sequences if genes_fasta is missing
 process fetchUniProtSequences {
     tag "Fetching UniProt sequences"
-    publishDir "${params.out_dir}/uniprot_sequences", mode: 'copy'
+    publishDir "${params.out_label}/uniprot_sequences", mode: 'copy'
+    container "${workflow.projectDir}/bin/entheome.sif"
+    beforeScript "source /usr/local/conda/etc/profile.d/conda.sh && conda activate EGEP_env"
     
     input:
     val primary_genes
     val secondary_genes
     val in_genus
     val data_type
-    val out_dir
+    val out_label
     
     output:
     path "output.fasta", emit: fasta_file
     
     script:
     """
-    python3 ${workflow.projectDir}/bin/exonerate_clinker/fetch_uniprot_sequences.py "${primary_genes}" "${secondary_genes}" "${in_genus}" "${data_type}" "${out_dir}"
-    mv ${in_genus}_${out_dir}_${data_type}.fasta output.fasta
+    python3 ${workflow.projectDir}/bin/exonerate_clinker/fetch_uniprot_sequences.py "${primary_genes}" "${secondary_genes}" "${in_genus}" "${data_type}" "${out_label}"
+    mv ${in_genus}_${out_label}_${data_type}.fasta output.fasta
     """
 }
 
@@ -82,6 +108,8 @@ process fetchUniProtSequences {
 process generateProductDict {
     tag "Generating product_dict from: ${genes_fasta.simpleName}"
     publishDir "${params.output_dir}/product_dict", mode: 'copy'
+    container "${workflow.projectDir}/bin/entheome.sif"
+    beforeScript "source /usr/local/conda/etc/profile.d/conda.sh && conda activate EGEP_env"
 
     input:
     path genes_fasta
@@ -101,20 +129,22 @@ process generateProductDict {
 process findAssemblyList {
     tag "Finding assembly list"
     publishDir "${params.output_dir}/assembly_lists", mode: 'copy'
-    
+    container "${workflow.projectDir}/bin/entheome.sif"
+    beforeScript "source /usr/local/conda/etc/profile.d/conda.sh && conda activate EGEP_env"
+   
     input:
     val base_folder
     val in_genus
-    val out_dir  // Also used to exclude output directories in find_assemblies.py
+    val out_label  // Also used to exclude output directories in find_assemblies.py
     
     output:
     stdout emit: assembly_paths          // Named output for stdout
-    path "in-${in_genus}_out-${out_dir}_assemblies.txt", emit: assembly_file  // Named output for file
+    path "in-${in_genus}_out-${out_label}_assemblies.txt", emit: assembly_file  // Named output for file
 
     script:
     """
-    python3 ${workflow.projectDir}/bin/find_assemblies.py "${base_folder}" "${in_genus}" "${out_dir}" > in-${in_genus}_out-${out_dir}_assemblies.txt
-    cat in-${in_genus}_out-${out_dir}_assemblies.txt  # Just the paths
+    python3 ${workflow.projectDir}/bin/find_assemblies.py "${base_folder}" "${in_genus}" "${out_label}" > in-${in_genus}_out-${out_label}_assemblies.txt
+    cat in-${in_genus}_out-${out_label}_assemblies.txt  # Just the paths
     """
 }
 
@@ -123,6 +153,8 @@ process blastAndFindBestContig {
     tag "BLASTing and trimming: ${assembly_file.simpleName}"
     publishDir "${params.output_dir}/blast_results", mode: 'copy', pattern: "*.json"
     publishDir "${params.output_dir}/clinker_inputs", mode: 'copy', pattern: "*_trimmed.fasta"
+    container "${workflow.projectDir}/bin/entheome.sif"
+    beforeScript "source /usr/local/conda/etc/profile.d/conda.sh && conda activate EGEP_env"
 
     input:
     path assembly_file
@@ -131,11 +163,11 @@ process blastAndFindBestContig {
     val secondary_genes
     val data_type
     val max_trimmed_length
-    val out_dir
+    val out_label
 
     output:
     path "${assembly_file.simpleName}_blast_hits.json", emit: blast_hits
-    path "${assembly_file.simpleName}_${out_dir}_trimmed.fasta", optional: true, emit: trimmed_fasta
+    path "${assembly_file.simpleName}_${out_label}_trimmed.fasta", optional: true, emit: trimmed_fasta
     path "${assembly_file.simpleName}_blast_debug.log", emit: debug_log
 
     script:
@@ -170,7 +202,7 @@ process blastAndFindBestContig {
         "${genes_list}" \
         "${secondary_list}" \
         ${assembly_file.simpleName}_blast_hits.json \
-        ${assembly_file.simpleName}_${out_dir}_trimmed.fasta \
+        ${assembly_file.simpleName}_${out_label}_trimmed.fasta \
         --buffer 5000 \
         --max_length ${max_trimmed_length} \
         > ${assembly_file.simpleName}_blast_debug.log 2>&1 || {
@@ -181,11 +213,12 @@ process blastAndFindBestContig {
     """
 }
 
-
 // Process to run Exonerate analysis on a list of contig FASTAs using exonerate_fasta_list.py
 process exonerateContigAnalysis {
     tag "Exonerating contigs with ${cpu_threads} threads"
     publishDir "${params.output_dir}/exonerate_results/contig", mode: 'copy'
+    container "${workflow.projectDir}/bin/entheome.sif"
+    beforeScript "source /usr/local/conda/etc/profile.d/conda.sh && conda activate EGEP_env"
 
     input:
     path contig_fastas  // Collection of FASTA files
@@ -220,6 +253,7 @@ process convertContigGtfToGff3 {
     tag "Converting contig GTF to GFF3: ${gtf_file.simpleName}"
     publishDir "${params.output_dir}/clinker_inputs", mode: 'copy'
     container "${workflow.projectDir}/bin/entheome.sif"
+    beforeScript "source /usr/local/conda/etc/profile.d/conda.sh && conda activate EGEP_env"
 
     input:
     path gtf_file
@@ -249,6 +283,7 @@ process extractAASequences {
     tag "Extracting AA sequences from: ${gtf_file.simpleName}"
     publishDir "${params.output_dir}/aa_sequences", mode: 'copy'
     container "${workflow.projectDir}/bin/entheome.sif"
+    beforeScript "source /usr/local/conda/etc/profile.d/conda.sh && conda activate EGEP_env"
 
     input:
     path gtf_file
@@ -268,24 +303,25 @@ process extractAASequences {
 process generateClinkerPlot {
     tag "Generating clinker plot"
     publishDir "${params.output_dir}", mode: 'copy'
+    container "${workflow.projectDir}/bin/entheome.sif"
+    beforeScript "source /usr/local/conda/etc/profile.d/conda.sh && conda activate EGEP_env"
 
     input:
     val clinker_pid
-    val out_dir
+    val out_label
     val gff3_ch
 
     output:
-    path "${out_dir}_clinker_plot.html"  // Only the plot, not optional
+    path "${out_label}_clinker_plot.html"  // Only the plot, not optional
 
     script:
     """
     # Run clinker with staged GFF3 file names only, redirect output for debugging
     clinker -i ${clinker_pid} \
-            -p ${out_dir}_clinker_plot.html \
+            -p ${out_label}_clinker_plot.html \
             ${params.output_dir}/clinker_inputs/*.gff3
     """
 }
-
 
 // Workflow
 workflow {
@@ -304,7 +340,7 @@ workflow {
             params.secondary_genes,
             params.in_genus,
             params.data_type,
-            params.out_dir
+            params.out_label
         ).fasta_file
         data_type = params.data_type
     } else {
@@ -315,11 +351,11 @@ workflow {
     product_dict_ch = generateProductDict(genes_fasta_ch)
 
     // Step 3: Find assembly files
-    assembly_list_ch = findAssemblyList(params.base_folder, params.in_genus, params.out_dir)
+    assembly_list_ch = findAssemblyList(params.base_folder, params.in_genus, params.out_label)
     assembly_files_ch = assembly_list_ch.assembly_paths
         .splitText()
         .map { it.trim() }
-        .filter { it.endsWith('.fasta') && file(it).exists() && !it.contains(params.out_dir) }
+        .filter { it.endsWith('.fasta') && file(it).exists() && !it.contains(params.out_label) }
 
     // Step 4: BLAST and trim in one go
     blast_results_ch = blastAndFindBestContig(
@@ -329,17 +365,16 @@ workflow {
         params.secondary_genes,
         data_type,
         params.max_trimmed_length,
-        params.out_dir
+        params.out_label
     )
     blast_hits_ch = blast_results_ch.blast_hits
     trimmed_fasta_ch = blast_results_ch.trimmed_fasta
     debug_logs_ch = blast_results_ch.debug_log
-
-    // Step 5: Collect trimmed FASTAs and proceed
     trimmed_fasta_list_ch = trimmed_fasta_ch
         .filter { it && file(it).exists() }
         .collect()
 
+    // Step 5: Exonerate the trimmed contig
     gtf_ch = exonerateContigAnalysis(
         trimmed_fasta_list_ch,
         genes_fasta_ch.first(),
@@ -358,10 +393,17 @@ workflow {
         .collect()
         .ifEmpty { error "No non-empty GFF3 files generated from convertContigGtfToGff3" }
 
-    // Step 10: Generate clinker plot with paired GFF3 and FASTA
+    // Step 7: Generate clinker plot with paired GFF3 and FASTA
     clinker_plot_ch = generateClinkerPlot(
         params.clinker_pid,
-        params.out_dir,
+        params.out_label,
         gff3_ch
     )
+}
+
+// Print execution time and compute resources
+workflow.onComplete {
+    println "Pipeline completed at: ${workflow.complete}"
+    println "Execution time: ${workflow.duration}"
+    println "Compute resources used: ${workflow.stats}"
 }
